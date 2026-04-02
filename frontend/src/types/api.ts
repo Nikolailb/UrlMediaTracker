@@ -1,6 +1,8 @@
 export type PatternSource = 'AUTO' | 'MANUAL'
-export type CheckStrategy = 'INCREMENTAL_PROBE'
+export type CheckStrategy = 'INCREMENTAL_PROBE' | 'TOC_SCRAPER'
 export type PatternConfidence = 'HIGH' | 'MEDIUM' | 'LOW'
+export type ItemCategory = 'Novel' | 'Light Novel' | 'Manhwa' | 'Manhua' | 'Manga' | 'Webtoon' | 'Pornhwa' | 'Comic' | 'Anime'
+export const ITEM_CATEGORIES: ItemCategory[] = ['Novel', 'Light Novel', 'Manhwa', 'Manhua', 'Manga', 'Webtoon', 'Pornhwa', 'Comic', 'Anime']
 
 export interface ItemRead {
   id: string
@@ -10,6 +12,8 @@ export interface ItemRead {
   chapter_regex: string | null
   pattern_source: PatternSource
   check_strategy: CheckStrategy
+  toc_url: string | null
+  category: string | null
   current_chapter: string | null
   latest_chapter: string | null
   check_interval_min: number
@@ -26,6 +30,8 @@ export interface ItemCreate {
   title?: string | null
   manual_regex?: string | null
   check_interval_min?: number
+  toc_url?: string | null
+  category?: string | null
 }
 
 export interface ItemUpdate {
@@ -34,6 +40,9 @@ export interface ItemUpdate {
   check_interval_min?: number | null
   current_chapter?: string | null
   is_active?: boolean | null
+  toc_url?: string | null
+  check_strategy?: CheckStrategy | null
+  category?: string | null
 }
 
 export interface MarkReadRequest {

@@ -49,9 +49,14 @@ export function ItemCards({ items, onEdit, onDelete }: ItemCardsProps) {
           {/* Footer */}
           <div className="flex items-center justify-between text-xs text-muted-foreground pt-1 border-t border-border">
             <span>Checked <RelativeTime iso={item.last_checked_at} /></span>
-            <Badge variant={item.is_active ? 'success' : 'secondary'} className="text-[10px]">
-              {item.is_active ? 'Active' : 'Paused'}
-            </Badge>
+            <div className="flex items-center gap-1.5">
+              {item.category && (
+                <Badge variant="outline" className="text-[10px]">{item.category}</Badge>
+              )}
+              <Badge variant={item.is_active ? 'success' : 'secondary'} className="text-[10px]">
+                {item.is_active ? 'Active' : 'Paused'}
+              </Badge>
+            </div>
           </div>
         </div>
       ))}

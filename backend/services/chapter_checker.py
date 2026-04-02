@@ -9,6 +9,7 @@ register it in STRATEGY_REGISTRY to add site-specific scrapers later.
 
 import asyncio
 import logging
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -38,6 +39,8 @@ class CheckerConfig:
     # Prevents a probe run from hanging indefinitely when a site returns
     # 200 for every URL or is extremely slow.
     max_probe_duration_seconds: float = 60.0
+    # URL of a table-of-contents page used by ToCScraperStrategy.
+    toc_url: str | None = None
     # Phrases that indicate a soft 404 — the server returns 200 but the page
     # has no real chapter content. Matched case-insensitively against the
     # first ``probe_byte_limit`` bytes of the response body.
@@ -215,8 +218,106 @@ class IncrementalProbeStrategy(BaseCheckStrategy):
 # Strategy registry — add new strategies here
 # ---------------------------------------------------------------------------
 
+
+class ToCScraperStrategy(BaseCheckStrategy):
+    """
+    Finds the latest chapter by fetching a table-of-contents page and
+    scanning every href attribute for URLs that match the item's
+    url_template pattern.
+
+    This is the correct approach for sites where chapter URL IDs are not
+    sequentially numbered (e.g. they are global post IDs shared across many
+    stories).  Sequential probing would wander off into unrelated content.
+
+    The match regex is derived directly from url_template by escaping the
+    static parts and replacing ``{n}`` with a numeric capture group — no
+    site-specific knowledge is required beyond the ToC URL.
+
+    Only the first page of the ToC is fetched.  Because most sites list
+    newest chapters first, page 1 already contains the highest ID.
+    """
+
+    _HREF_RE = re.compile(r'href=["\']([^"\']+)["\']', re.IGNORECASE)
+
+    async def find_latest_chapter(
+        self,
+        current_latest: str,
+        url_template: str,
+        config: CheckerConfig,
+    ) -> str | None:
+        if not config.toc_url:
+            logger.warning("ToCScraperStrategy: no toc_url in config — cannot scrape.")
+            return None
+
+        # Build a match regex from the url_template.
+        # Split on the {n} placeholder so we can escape both halves safely.
+        parts = url_template.split("{n}", 1)
+        if len(parts) != 2:
+            logger.warning(
+                "ToCScraperStrategy: url_template %r has no {n} placeholder.",
+                url_template,
+            )
+            return None
+
+        pattern = re.compile(
+            re.escape(parts[0]) + r"(\d+(?:\.\d+)?[a-z]?)" + re.escape(parts[1]),
+            re.IGNORECASE,
+        )
+
+        async with httpx.AsyncClient(
+            timeout=config.timeout,
+            follow_redirects=True,
+            headers={"User-Agent": "ChapterTracker/1.0 (chapter availability check)"},
+        ) as client:
+            try:
+                resp = await client.get(config.toc_url)
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                logger.warning(
+                    "ToCScraperStrategy: HTTP %s fetching ToC %s",
+                    exc.response.status_code,
+                    config.toc_url,
+                )
+                return None
+            except httpx.RequestError as exc:
+                logger.warning(
+                    "ToCScraperStrategy: network error fetching ToC %s: %s",
+                    config.toc_url,
+                    exc,
+                )
+                return None
+
+        ids: list[float] = []
+        for href_m in self._HREF_RE.finditer(resp.text):
+            chapter_m = pattern.search(href_m.group(1))
+            if chapter_m:
+                try:
+                    ids.append(float(chapter_m.group(1)))
+                except ValueError:
+                    pass
+
+        if not ids:
+            logger.debug(
+                "ToCScraperStrategy: no chapter hrefs matched on %s", config.toc_url
+            )
+            return None
+
+        max_id = max(ids)
+        try:
+            current_f = float(current_latest)
+        except (ValueError, TypeError):
+            current_f = -1.0
+
+        if max_id <= current_f:
+            return None
+
+        # Return as int string when the value is whole, else keep decimal
+        return str(int(max_id)) if max_id == int(max_id) else str(max_id)
+
+
 STRATEGY_REGISTRY: dict[str, BaseCheckStrategy] = {
     "INCREMENTAL_PROBE": IncrementalProbeStrategy(),
+    "TOC_SCRAPER": ToCScraperStrategy(),
 }
 
 
@@ -247,6 +348,7 @@ async def check_item(
             coarse_step=settings.PROBE_COARSE_STEP,
             max_coarse_steps=settings.MAX_COARSE_STEPS,
             max_probe_duration_seconds=settings.MAX_PROBE_DURATION_SECONDS,
+            toc_url=item.toc_url,
         )
 
     log = ChapterCheckLog(
@@ -268,9 +370,7 @@ async def check_item(
         db.commit()
         return log
 
-    strategy = STRATEGY_REGISTRY.get(
-        item.check_strategy.value, IncrementalProbeStrategy()
-    )
+    strategy = STRATEGY_REGISTRY.get(item.check_strategy, IncrementalProbeStrategy())
 
     try:
         new_latest = await asyncio.wait_for(

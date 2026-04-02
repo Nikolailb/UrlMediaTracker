@@ -2,24 +2,27 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from models.item import CheckStrategy, PatternSource
+from models.item import PatternSource, CheckStrategy, ItemCategory
 
 
 class ItemCreate(BaseModel):
     url: str
     title: str | None = None
-    # Provide a custom regex to override auto-detection (group 1 = chapter number)
     manual_regex: str | None = None
     check_interval_min: int = 60
+    toc_url: str | None = None
+    category: ItemCategory | None = None
 
 
 class ItemUpdate(BaseModel):
     title: str | None = None
-    # Supplying a new manual_regex triggers re-detection on the stored original_url
     manual_regex: str | None = None
     check_interval_min: int | None = None
     current_chapter: str | None = None
     is_active: bool | None = None
+    toc_url: str | None = None
+    check_strategy: CheckStrategy | None = None
+    category: ItemCategory | None = None
 
 
 class ItemRead(BaseModel):
@@ -29,7 +32,9 @@ class ItemRead(BaseModel):
     url_template: str | None
     chapter_regex: str | None
     pattern_source: PatternSource
-    check_strategy: CheckStrategy
+    check_strategy: str
+    toc_url: str | None
+    category: str | None
     current_chapter: str | None
     latest_chapter: str | None
     check_interval_min: int
@@ -38,7 +43,6 @@ class ItemRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     user_id: str | None
-    # Derived: True when latest_chapter > current_chapter
     has_unread: bool | None = None
 
     model_config = {"from_attributes": True}

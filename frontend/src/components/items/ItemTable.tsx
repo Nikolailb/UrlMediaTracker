@@ -69,6 +69,9 @@ export function ItemTable({ items, sortKey, sortDir, onSort, onEdit, onDelete }:
                     {item.has_unread && (
                       <span className="shrink-0 h-2 w-2 rounded-full bg-primary animate-pulse" />
                     )}
+                    {item.category && (
+                      <Badge variant="outline" className="shrink-0 text-[10px] hidden sm:inline-flex">{item.category}</Badge>
+                    )}
                   </div>
                   <a
                     href={item.original_url}

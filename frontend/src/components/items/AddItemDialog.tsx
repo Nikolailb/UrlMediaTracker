@@ -11,7 +11,9 @@ import {
 import { useCreateItem } from '@/hooks/useItems'
 import { usePatternDetect } from '@/hooks/usePatternDetect'
 import { toast } from 'sonner'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { PatternDetectionResult } from '@/types/api'
+import { ITEM_CATEGORIES } from '@/types/api'
 
 interface AddItemDialogProps {
   open: boolean
@@ -30,6 +32,8 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
   const [manualRegex, setManualRegex] = useState('')
   const [title, setTitle] = useState('')
   const [interval, setInterval] = useState('60')
+  const [tocUrl, setTocUrl] = useState('')
+  const [category, setCategory] = useState('')
   const [preview, setPreview] = useState<PatternDetectionResult | null>(null)
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -44,6 +48,8 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
       setManualRegex('')
       setTitle('')
       setInterval('60')
+      setTocUrl('')
+      setCategory('')
       setPreview(null)
     }
   }, [open])
@@ -74,6 +80,8 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
         title: title.trim() || null,
         manual_regex: manualRegex.trim() || null,
         check_interval_min: parseInt(interval) || 60,
+        toc_url: tocUrl.trim() || null,
+        category: category || null,
       },
       {
         onSuccess: () => {
@@ -201,6 +209,43 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
                 value={interval}
                 onChange={(e) => setInterval(e.target.value)}
               />
+            </div>
+
+            {/* Table of contents URL */}
+            <div className="space-y-1.5">
+              <Label htmlFor="toc-url">
+                Table of contents URL{' '}
+                <span className="text-muted-foreground font-normal">(optional)</span>
+              </Label>
+              <Input
+                id="toc-url"
+                placeholder="https://example.com/chapters/1207053/"
+                value={tocUrl}
+                onChange={(e) => setTocUrl(e.target.value)}
+              />
+              <p className="text-[11px] text-muted-foreground leading-snug">
+                Use this when the site uses non-sequential chapter IDs. The tracker
+                will scan the ToC page for links instead of probing sequentially.
+              </p>
+            </div>
+
+            {/* Category */}
+            <div className="space-y-1.5">
+              <Label htmlFor="category">
+                Category{' '}
+                <span className="text-muted-foreground font-normal">(optional)</span>
+              </Label>
+              <Select value={category} onValueChange={(v) => setCategory(v === '__none__' ? '' : v)}>
+                <SelectTrigger id="category">
+                  <SelectValue placeholder="No category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">No category</SelectItem>
+                  {ITEM_CATEGORIES.map((c) => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Summary */}

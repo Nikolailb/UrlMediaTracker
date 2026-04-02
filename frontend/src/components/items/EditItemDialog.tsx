@@ -9,7 +9,9 @@ import {
 } from '@/components/ui/dialog'
 import { useUpdateItem } from '@/hooks/useItems'
 import { toast } from 'sonner'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { ItemRead } from '@/types/api'
+import { ITEM_CATEGORIES } from '@/types/api'
 
 interface EditItemDialogProps {
   item: ItemRead | null
@@ -23,6 +25,8 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
   const [interval, setInterval] = useState('60')
   const [currentChapter, setCurrentChapter] = useState('')
   const [isActive, setIsActive] = useState(true)
+  const [tocUrl, setTocUrl] = useState('')
+  const [category, setCategory] = useState('')
 
   const update = useUpdateItem()
 
@@ -33,6 +37,8 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
       setInterval(String(item.check_interval_min))
       setCurrentChapter(item.current_chapter ?? '')
       setIsActive(item.is_active)
+      setTocUrl(item.toc_url ?? '')
+      setCategory(item.category ?? '')
     }
   }, [item])
 
@@ -47,6 +53,8 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
           check_interval_min: parseInt(interval) || 60,
           current_chapter: currentChapter.trim() || null,
           is_active: isActive,
+          toc_url: tocUrl.trim() || null,
+          category: category || null,
         },
       },
       {
@@ -122,6 +130,41 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
               className="h-4 w-4 rounded border-border accent-primary"
             />
             <Label htmlFor="edit-active">Active (check for updates)</Label>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-toc">
+              Table of contents URL{' '}
+              <span className="text-muted-foreground font-normal">(optional)</span>
+            </Label>
+            <Input
+              id="edit-toc"
+              placeholder="https://example.com/chapters/1207053/"
+              value={tocUrl}
+              onChange={(e) => setTocUrl(e.target.value)}
+            />
+            <p className="text-[11px] text-muted-foreground leading-snug">
+              When set, updates are found by scanning this page for chapter links
+              instead of sequential URL probing.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-category">
+              Category{' '}
+              <span className="text-muted-foreground font-normal">(optional)</span>
+            </Label>
+            <Select value={category} onValueChange={(v) => setCategory(v === '__none__' ? '' : v)}>
+              <SelectTrigger id="edit-category">
+                <SelectValue placeholder="No category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">No category</SelectItem>
+                {ITEM_CATEGORIES.map((c) => (
+                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 

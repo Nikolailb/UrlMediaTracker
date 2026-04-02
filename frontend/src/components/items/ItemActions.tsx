@@ -72,7 +72,36 @@ export function ItemActions({ item, onEdit, onDelete }: ItemActionsProps) {
   }
 
   return (
-    <DropdownMenu>
+    <div className="flex items-center">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 hidden sm:inline-flex"
+        onClick={handleCheck}
+        disabled={checkItem.isPending}
+        title="Check for updates"
+      >
+        <RefreshCw className={`h-4 w-4 ${checkItem.isPending ? 'animate-spin' : ''}`} />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 hidden sm:inline-flex"
+        onClick={() =>
+          markCaughtUp.mutate(
+            { id: item.id, chapter: item.latest_chapter! },
+            {
+              onSuccess: () => toast.success(`Marked caught up to chapter ${item.latest_chapter}.`),
+              onError: () => toast.error('Failed to mark as caught up.'),
+            },
+          )
+        }
+        disabled={!item.latest_chapter || !item.has_unread || markCaughtUp.isPending}
+        title="Mark as caught up"
+      >
+        <ChevronsUp className="h-4 w-4" />
+      </Button>
+      <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Item actions">
           <MoreHorizontal className="h-4 w-4" />
@@ -123,5 +152,6 @@ export function ItemActions({ item, onEdit, onDelete }: ItemActionsProps) {
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+    </div>
   )
 }

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models.item import TrackedItem
+from models.item import CheckStrategy, TrackedItem
 from schemas.item import (
     ItemCreate,
     ItemRead,
@@ -43,12 +43,15 @@ def _has_unread(item: TrackedItem) -> bool | None:
 
 
 def _to_read(item: TrackedItem) -> ItemRead:
-    return ItemRead.model_validate(
-        {
-            **{col.name: getattr(item, col.name) for col in item.__table__.columns},
-            "has_unread": _has_unread(item),
-        }
-    )
+    data = {col.name: getattr(item, col.name) for col in item.__table__.columns}
+    # SQLite returns naive datetimes even when the column has timezone=True.
+    # Normalise them to UTC-aware so Pydantic serialises them with +00:00,
+    # which prevents browsers from treating them as local time.
+    for field in ("last_checked_at", "created_at", "updated_at"):
+        val = data.get(field)
+        if isinstance(val, datetime) and val.tzinfo is None:
+            data[field] = val.replace(tzinfo=timezone.utc)
+    return ItemRead.model_validate({**data, "has_unread": _has_unread(item)})
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +73,12 @@ def create_item(payload: ItemCreate, db: DbDep):
         # Assume the submitted chapter is the latest known on first add
         latest_chapter=detection.current_chapter,
         check_interval_min=payload.check_interval_min,
+        toc_url=payload.toc_url,
+        category=payload.category,
+        # Auto-select strategy: use ToC scraper when a ToC URL is provided
+        check_strategy=(
+            CheckStrategy.TOC_SCRAPER if payload.toc_url else CheckStrategy.INCREMENTAL_PROBE
+        ),
     )
     db.add(item)
     db.commit()
@@ -108,6 +117,15 @@ def update_item(item_id: str, payload: ItemUpdate, db: DbDep):
         item.url_template = detection.url_template
         item.chapter_regex = detection.chapter_regex
         item.pattern_source = detection.pattern_source
+
+    # When toc_url is being set/cleared, auto-adjust the strategy unless the
+    # caller explicitly supplied a check_strategy in the same request.
+    if "toc_url" in update_data and "check_strategy" not in update_data:
+        new_toc = update_data["toc_url"]
+        if new_toc and item.check_strategy != CheckStrategy.TOC_SCRAPER:
+            item.check_strategy = CheckStrategy.TOC_SCRAPER
+        elif not new_toc and item.check_strategy == CheckStrategy.TOC_SCRAPER:
+            item.check_strategy = CheckStrategy.INCREMENTAL_PROBE
 
     for key, value in update_data.items():
         setattr(item, key, value)
