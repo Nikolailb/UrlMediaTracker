@@ -45,6 +45,15 @@ export function useMarkRead() {
   })
 }
 
+export function useMarkCaughtUp() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, chapter }: { id: string; chapter: string }) =>
+      itemsApi.markRead(id, { chapter }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ITEMS_KEY }),
+  })
+}
+
 export function useCheckItem() {
   const qc = useQueryClient()
   return useMutation({

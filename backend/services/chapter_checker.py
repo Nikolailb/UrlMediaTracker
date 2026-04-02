@@ -31,8 +31,32 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CheckerConfig:
     timeout: float = 10.0
-    delay_seconds: float = 1.0
-    max_probe_ahead: int = 10
+    delay_seconds: float = 0.5
+    coarse_step: int = 5
+    max_coarse_steps: int = 100
+    # Hard wall-clock cap on a single find_latest_chapter call (seconds).
+    # Prevents a probe run from hanging indefinitely when a site returns
+    # 200 for every URL or is extremely slow.
+    max_probe_duration_seconds: float = 60.0
+    # Phrases that indicate a soft 404 — the server returns 200 but the page
+    # has no real chapter content. Matched case-insensitively against the
+    # first ``probe_byte_limit`` bytes of the response body.
+    content_error_phrases: tuple[str, ...] = (
+        "chapter not available",
+        "chapter missing",
+        "chapter content is missing",
+        "content is missing or does not exist",
+        "chapter does not exist",
+        "chapter not found",
+        "page not found",
+        "content not found",
+        "no chapter found",
+        "chapter unavailable",
+    )
+    # Maximum response bytes to read before stopping content inspection.
+    # 32 KB is enough to reach the <body> of any page without downloading
+    # the whole thing.
+    probe_byte_limit: int = 32_768
 
 
 # ---------------------------------------------------------------------------
@@ -59,18 +83,62 @@ class BaseCheckStrategy(ABC):
 
 
 # ---------------------------------------------------------------------------
+# Content-aware probe helper
+# ---------------------------------------------------------------------------
+
+
+async def _probe(
+    client: httpx.AsyncClient,
+    url: str,
+    config: CheckerConfig,
+) -> bool:
+    """
+    Return ``True`` if *url* both responds with a success status code
+    **and** appears to contain real chapter content.
+
+    Uses a streaming GET so only the first ``config.probe_byte_limit``
+    bytes are downloaded — enough to catch error banners in the page
+    header without fetching the full HTML.
+
+    Raises ``httpx.RequestError`` on network failures so callers can
+    handle retries/logging uniformly.
+    """
+    async with client.stream("GET", url) as resp:
+        if resp.status_code >= 400:
+            return False
+        raw = b""
+        async for chunk in resp.aiter_bytes(chunk_size=4_096):
+            raw += chunk
+            if len(raw) >= config.probe_byte_limit:
+                break
+    text = raw.decode("utf-8", errors="replace").lower()
+    return not any(phrase in text for phrase in config.content_error_phrases)
+
+
+# ---------------------------------------------------------------------------
 # Built-in strategy: incremental HTTP probing
 # ---------------------------------------------------------------------------
 
 
 class IncrementalProbeStrategy(BaseCheckStrategy):
     """
-    Probe chapter N+1, N+2, … using HTTP HEAD requests until a 4xx/5xx
-    response is received or ``config.max_probe_ahead`` is exhausted.
+    Two-phase content-aware probe to find the latest available chapter.
 
-    Works well for sites with sequential integer chapter numbering.
-    For sites that block HEAD, a GET-based scraping strategy can be
-    registered instead (see STRATEGY_REGISTRY below).
+    Phase 1 — coarse: probe N + STEP, N + 2*STEP, … until the first miss.
+    This skips large gaps quickly (e.g. 100 new chapters in ~20 requests
+    with the default step of 5).
+
+    Phase 2 — fine: probe every integer in the window between the last
+    coarse hit and the coarse miss to find the exact last chapter.
+
+    Each probe is a streaming GET request. Only the first
+    ``config.probe_byte_limit`` bytes are read, so large HTML pages are
+    not downloaded in full. After receiving a 200, the response body is
+    scanned for ``config.content_error_phrases`` to catch sites that
+    return HTTP 200 for missing chapters (soft 404s).
+
+    ``config.max_coarse_steps`` is a safety cap so a site that returns
+    200 for everything cannot loop forever.
     """
 
     async def find_latest_chapter(
@@ -87,6 +155,7 @@ class IncrementalProbeStrategy(BaseCheckStrategy):
             )
             return None
 
+        step = max(1, config.coarse_step)
         found_latest: str | None = None
 
         async with httpx.AsyncClient(
@@ -94,25 +163,50 @@ class IncrementalProbeStrategy(BaseCheckStrategy):
             follow_redirects=True,
             headers={"User-Agent": "ChapterTracker/1.0 (chapter availability check)"},
         ) as client:
-            for offset in range(1, config.max_probe_ahead + 1):
-                candidate = str(base_num + offset)
-                probe_url = build_chapter_url(url_template, candidate)
+
+            # ------------------------------------------------------------------
+            # Phase 1: coarse stepping — find the window [coarse_low, coarse_miss)
+            # that contains the last available chapter.
+            # ------------------------------------------------------------------
+            coarse_low = base_num  # last confirmed-good chapter number
+            coarse_miss = base_num + step  # first unconfirmed candidate
+
+            for _ in range(config.max_coarse_steps):
+                probe_url = build_chapter_url(url_template, str(coarse_miss))
                 try:
-                    resp = await client.head(probe_url)
-                    if resp.status_code < 400:
-                        found_latest = candidate
-                        logger.debug("Chapter %s exists at %s", candidate, probe_url)
+                    exists = await _probe(client, probe_url, config)
+                    if exists:
+                        found_latest = str(coarse_miss)
+                        coarse_low = coarse_miss
+                        coarse_miss += step
+                        logger.debug("Coarse hit: chapter %s exists.", coarse_low)
                         await asyncio.sleep(config.delay_seconds)
                     else:
-                        logger.debug(
-                            "Chapter %s → HTTP %s, stopping probe.",
-                            candidate,
-                            resp.status_code,
-                        )
+                        logger.debug("Coarse miss: chapter %s.", coarse_miss)
                         break
                 except httpx.RequestError as exc:
                     logger.warning("Network error probing %s: %s", probe_url, exc)
                     break
+
+            # ------------------------------------------------------------------
+            # Phase 2: fine stepping within (coarse_low, coarse_miss) — only
+            # needed when the coarse step is > 1.
+            # ------------------------------------------------------------------
+            if step > 1:
+                for num in range(coarse_low + 1, coarse_miss):
+                    probe_url = build_chapter_url(url_template, str(num))
+                    try:
+                        exists = await _probe(client, probe_url, config)
+                        if exists:
+                            found_latest = str(num)
+                            logger.debug("Fine hit: chapter %s exists.", num)
+                            await asyncio.sleep(config.delay_seconds)
+                        else:
+                            logger.debug("Fine miss: chapter %s, done.", num)
+                            break
+                    except httpx.RequestError as exc:
+                        logger.warning("Network error probing %s: %s", probe_url, exc)
+                        break
 
         return found_latest
 
@@ -150,7 +244,9 @@ async def check_item(
         config = CheckerConfig(
             timeout=settings.PROBE_REQUEST_TIMEOUT,
             delay_seconds=settings.PROBE_DELAY_SECONDS,
-            max_probe_ahead=settings.MAX_PROBE_AHEAD,
+            coarse_step=settings.PROBE_COARSE_STEP,
+            max_coarse_steps=settings.MAX_COARSE_STEPS,
+            max_probe_duration_seconds=settings.MAX_PROBE_DURATION_SECONDS,
         )
 
     log = ChapterCheckLog(
@@ -177,19 +273,30 @@ async def check_item(
     )
 
     try:
-        new_latest = await strategy.find_latest_chapter(
-            current_latest=item.latest_chapter or item.current_chapter or "0",
-            url_template=item.url_template,
-            config=config,
+        new_latest = await asyncio.wait_for(
+            strategy.find_latest_chapter(
+                current_latest=item.latest_chapter or item.current_chapter or "0",
+                url_template=item.url_template,
+                config=config,
+            ),
+            timeout=config.max_probe_duration_seconds,
         )
-
         if new_latest is not None:
             log.new_latest_chapter = new_latest
             item.latest_chapter = new_latest
-
         item.last_checked_at = datetime.now(timezone.utc)
         log.success = True
-
+    except asyncio.TimeoutError:
+        logger.warning(
+            "Probe for item %s (%s) exceeded %ss wall-clock limit and was cancelled.",
+            item.id,
+            item.title,
+            config.max_probe_duration_seconds,
+        )
+        log.error_message = (
+            f"Probe timed out after {config.max_probe_duration_seconds:.0f}s. "
+            "Consider reducing coarse_step or max_coarse_steps."
+        )
     except Exception as exc:  # noqa: BLE001
         log.error_message = str(exc)[:999]
         logger.exception("Unexpected error while checking item %s", item.id)

@@ -35,7 +35,16 @@ async def run_due_checks() -> None:
             item
             for item in items
             if item.last_checked_at is None
-            or (now - item.last_checked_at) >= timedelta(minutes=item.check_interval_min)
+            or (
+                now
+                - (
+                    # SQLite returns naive datetimes; treat them as UTC
+                    item.last_checked_at
+                    if item.last_checked_at.tzinfo is not None
+                    else item.last_checked_at.replace(tzinfo=timezone.utc)
+                )
+            )
+            >= timedelta(minutes=item.check_interval_min)
         ]
 
         if not due:

@@ -1,4 +1,4 @@
-import { ExternalLink, MoreHorizontal, Pencil, RefreshCw, Trash2, BookCheck } from 'lucide-react'
+import { ExternalLink, MoreHorizontal, Pencil, RefreshCw, Trash2, BookCheck, ChevronsUp } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -8,7 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { useCheckItem, useMarkRead } from '@/hooks/useItems'
+import { useCheckItem, useMarkRead, useMarkCaughtUp } from '@/hooks/useItems'
 import { itemsApi } from '@/api/items'
 import { toast } from 'sonner'
 import type { ItemRead } from '@/types/api'
@@ -22,6 +22,7 @@ interface ItemActionsProps {
 export function ItemActions({ item, onEdit, onDelete }: ItemActionsProps) {
   const checkItem = useCheckItem()
   const markRead = useMarkRead()
+  const markCaughtUp = useMarkCaughtUp()
 
   async function handleOpenNext() {
     try {
@@ -87,6 +88,21 @@ export function ItemActions({ item, onEdit, onDelete }: ItemActionsProps) {
         <DropdownMenuItem onClick={handleMarkNextRead} disabled={!item.has_unread}>
           <BookCheck className="mr-2 h-4 w-4" />
           Mark next as read
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() =>
+            markCaughtUp.mutate(
+              { id: item.id, chapter: item.latest_chapter! },
+              {
+                onSuccess: () => toast.success(`Marked caught up to chapter ${item.latest_chapter}.`),
+                onError: () => toast.error('Failed to mark as caught up.'),
+              },
+            )
+          }
+          disabled={!item.latest_chapter || !item.has_unread || markCaughtUp.isPending}
+        >
+          <ChevronsUp className="mr-2 h-4 w-4" />
+          Mark as caught up
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleCheck} disabled={checkItem.isPending}>

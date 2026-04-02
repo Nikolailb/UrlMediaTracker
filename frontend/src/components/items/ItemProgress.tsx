@@ -6,6 +6,11 @@ interface ItemProgressProps {
   className?: string
 }
 
+function chapterUrl(template: string | null, chapter: string | null): string | null {
+  if (!template || !chapter) return null
+  return template.replace('{n}', encodeURIComponent(chapter))
+}
+
 export function ItemProgress({ item, className }: ItemProgressProps) {
   const current = item.current_chapter
   const latest = item.latest_chapter
@@ -18,17 +23,36 @@ export function ItemProgress({ item, className }: ItemProgressProps) {
   const latestF = chapterToFloat(latest)
   const hasUnread = item.has_unread === true
 
-  // Progress percentage — cap between 0 and 100
   const pct =
     latestF > 0 && currentF >= 0
       ? Math.min(100, Math.round((currentF / latestF) * 100))
       : null
 
+  const currentHref = chapterUrl(item.url_template, current)
+  const latestHref = chapterUrl(item.url_template, latest)
+
+  function ChapterLink({ chapter, href }: { chapter: string | null; href: string | null }) {
+    if (!chapter) return <span className="text-muted-foreground">—</span>
+    if (!href) return <span>{chapter}</span>
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline-offset-2 hover:underline hover:text-primary transition-colors"
+      >
+        {chapter}
+      </a>
+    )
+  }
+
   return (
     <div className={`space-y-1 ${className ?? ''}`}>
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium tabular-nums">
-          {current ?? '—'} / {latest ?? '—'}
+          <ChapterLink chapter={current} href={currentHref} />
+          {' / '}
+          <ChapterLink chapter={latest} href={latestHref} />
         </span>
         {hasUnread && (
           <span className="inline-flex h-2 w-2 rounded-full bg-primary animate-pulse" title="Unread chapters available" />

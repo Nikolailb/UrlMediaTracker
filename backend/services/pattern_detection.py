@@ -72,6 +72,9 @@ _TRAILING_NUMBER_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Common file extensions to strip before applying the trailing-number regex
+_EXTENSION_RE = re.compile(r"\.(html?|php\d*|aspx?|jsp|shtml)$", re.IGNORECASE)
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -206,13 +209,20 @@ def _try_keyword_match(url: str, path: str) -> PatternDetectionResult | None:
 
 
 def _try_trailing_number(url: str, path: str) -> PatternDetectionResult | None:
-    """Strategy 2 — last path segment is (or ends with) a bare number."""
+    """Strategy 2 — last path segment is (or ends with) a bare number,
+    optionally followed by a file extension like .html."""
     segments = [s for s in path.rstrip("/").split("/") if s]
     if not segments:
         return None
 
     last = segments[-1]
-    m = _TRAILING_NUMBER_RE.search(last)
+
+    # Strip file extension so numbers like "3090461" in "3090461.html" are found
+    ext_m = _EXTENSION_RE.search(last)
+    ext = ext_m.group(0) if ext_m else ""
+    bare = last[: ext_m.start()] if ext_m else last
+
+    m = _TRAILING_NUMBER_RE.search(bare)
     if not m:
         return None
 
@@ -220,16 +230,17 @@ def _try_trailing_number(url: str, path: str) -> PatternDetectionResult | None:
     suffix = m.group("suffix")
     current_chapter = number + suffix if suffix else number
 
-    # Regex captures the trailing number in the last path segment
-    chapter_regex = r"/(\d+(?:\.\d+)?[a-z]?)(?:[/?#]|$)"
+    # Regex captures the trailing number in the last path segment,
+    # tolerating an optional file extension after it.
+    chapter_regex = r"/(\d+(?:\.\d+)?[a-z]?)(?:\.[a-z]{2,5})?(?:[/?#]|$)"
 
-    # Locate the segment in the full URL to compute the replacement range
+    # Locate the segment in the full URL to compute the replacement range.
     seg_pos = url.rfind("/" + last)
     if seg_pos == -1:
         return None
 
     num_offset = last.rfind(m.group(0))
-    abs_start = seg_pos + 1 + num_offset          # +1 skips the leading "/"
+    abs_start = seg_pos + 1 + num_offset   # +1 skips the leading "/"
     abs_end = abs_start + len(m.group(0))
     template = url[:abs_start] + "{n}" + url[abs_end:]
 

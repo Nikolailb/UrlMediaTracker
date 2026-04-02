@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ItemProgress } from './ItemProgress'
 import { ItemActions } from './ItemActions'
-import { formatRelativeDate } from '@/lib/utils'
+import { RelativeTime } from '@/components/ui/relative-time'
 import type { ItemRead } from '@/types/api'
 
 type SortKey = 'title' | 'created_at' | 'last_checked_at' | 'has_unread'
@@ -93,7 +93,7 @@ export function ItemTable({ items, sortKey, sortDir, onSort, onEdit, onDelete }:
 
               {/* Last checked */}
               <td className="px-4 py-3 hidden lg:table-cell text-muted-foreground text-xs">
-                {formatRelativeDate(item.last_checked_at)}
+                <RelativeTime iso={item.last_checked_at} />
               </td>
 
               {/* Status */}

@@ -2,7 +2,7 @@ import { ExternalLink } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { ItemProgress } from './ItemProgress'
 import { ItemActions } from './ItemActions'
-import { formatRelativeDate } from '@/lib/utils'
+import { RelativeTime } from '@/components/ui/relative-time'
 import type { ItemRead } from '@/types/api'
 
 interface ItemCardsProps {
@@ -48,7 +48,7 @@ export function ItemCards({ items, onEdit, onDelete }: ItemCardsProps) {
 
           {/* Footer */}
           <div className="flex items-center justify-between text-xs text-muted-foreground pt-1 border-t border-border">
-            <span>Checked {formatRelativeDate(item.last_checked_at)}</span>
+            <span>Checked <RelativeTime iso={item.last_checked_at} /></span>
             <Badge variant={item.is_active ? 'success' : 'secondary'} className="text-[10px]">
               {item.is_active ? 'Active' : 'Paused'}
             </Badge>
