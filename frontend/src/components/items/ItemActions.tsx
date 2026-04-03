@@ -1,4 +1,4 @@
-import { ExternalLink, MoreHorizontal, Pencil, RefreshCw, Trash2, BookCheck, ChevronsUp } from 'lucide-react'
+import { ExternalLink, MoreHorizontal, Pencil, RefreshCw, Trash2, BookCheck, ChevronsUp, History, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -17,9 +17,10 @@ interface ItemActionsProps {
   item: ItemRead
   onEdit: () => void
   onDelete: () => void
+  onHistory: () => void
 }
 
-export function ItemActions({ item, onEdit, onDelete }: ItemActionsProps) {
+export function ItemActions({ item, onEdit, onDelete, onHistory }: ItemActionsProps) {
   const checkItem = useCheckItem()
   const markRead = useMarkRead()
   const markCaughtUp = useMarkCaughtUp()
@@ -73,6 +74,15 @@ export function ItemActions({ item, onEdit, onDelete }: ItemActionsProps) {
 
   return (
     <div className="flex items-center">
+      {/* Failure warning badge */}
+      {(item.consecutive_failures ?? 0) >= 2 && (
+        <span
+          title={`${item.consecutive_failures} consecutive failures. Last error: ${item.last_error ?? 'unknown'}`}
+          className="hidden sm:inline-flex h-8 w-8 items-center justify-center text-amber-500"
+        >
+          <AlertTriangle className="h-4 w-4" />
+        </span>
+      )}
       <Button
         variant="ghost"
         size="icon"
@@ -137,6 +147,10 @@ export function ItemActions({ item, onEdit, onDelete }: ItemActionsProps) {
         <DropdownMenuItem onClick={handleCheck} disabled={checkItem.isPending}>
           <RefreshCw className={`mr-2 h-4 w-4 ${checkItem.isPending ? 'animate-spin' : ''}`} />
           Check for updates
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onHistory}>
+          <History className="mr-2 h-4 w-4" />
+          Check history
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onEdit}>

@@ -2,10 +2,11 @@ import uuid
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from database import get_db
+from models.check_log import ChapterCheckLog
 from models.item import CheckStrategy, TrackedItem
 from schemas.item import (
     ItemCreate,
@@ -14,7 +15,11 @@ from schemas.item import (
     MarkReadRequest,
     NextChapterResponse,
 )
-from services.chapter_checker import check_item
+from services.chapter_checker import (
+    MANUAL_CHECK_COOLDOWN_SECONDS,
+    _last_manual_check,
+    check_item,
+)
 from services.pattern_detection import build_chapter_url, detect_pattern
 
 router = APIRouter(prefix="/items", tags=["items"])
@@ -223,6 +228,20 @@ def mark_read(item_id: str, payload: MarkReadRequest, db: DbDep):
 @router.post("/{item_id}/check", response_model=dict)
 async def trigger_check(item_id: str, db: DbDep):
     item = _get_or_404(item_id, db)
+
+    # Rate-limit manual checks to once per cooldown window
+    now = datetime.now(timezone.utc)
+    last = _last_manual_check.get(item_id)
+    if last is not None:
+        elapsed = (now - last).total_seconds()
+        if elapsed < MANUAL_CHECK_COOLDOWN_SECONDS:
+            remaining = int(MANUAL_CHECK_COOLDOWN_SECONDS - elapsed)
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Wait {remaining}s before checking this item again.",
+            )
+    _last_manual_check[item_id] = now
+
     log = await check_item(item, db)
     return {
         "success": log.success,
@@ -237,7 +256,7 @@ async def trigger_check_all(db: DbDep):
     items = db.query(TrackedItem).filter(TrackedItem.is_active.is_(True)).all()
     results = []
     for item in items:
-        log = await check_item(item, db)
+        log = await check_item(item, db, bypass_rate_limit=True)
         results.append(
             {
                 "item_id": item.id,
@@ -247,3 +266,132 @@ async def trigger_check_all(db: DbDep):
             }
         )
     return {"checked": len(results), "results": results}
+
+
+# ---------------------------------------------------------------------------
+# Check history
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{item_id}/history", response_model=list[dict])
+def get_check_history(item_id: str, db: DbDep, limit: int = 20):
+    _get_or_404(item_id, db)
+    logs = (
+        db.query(ChapterCheckLog)
+        .filter(ChapterCheckLog.item_id == item_id)
+        .order_by(ChapterCheckLog.checked_at.desc())
+        .limit(max(1, min(limit, 100)))
+        .all()
+    )
+    return [
+        {
+            "id": log.id,
+            "checked_at": (
+                log.checked_at.replace(tzinfo=timezone.utc)
+                if log.checked_at.tzinfo is None
+                else log.checked_at
+            ).isoformat(),
+            "success": log.success,
+            "previous_latest_chapter": log.previous_latest_chapter,
+            "new_latest_chapter": log.new_latest_chapter,
+            "error_message": log.error_message,
+        }
+        for log in logs
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Bulk operations
+# ---------------------------------------------------------------------------
+
+
+@router.post("/bulk-delete", status_code=status.HTTP_200_OK, response_model=dict)
+def bulk_delete(ids: Annotated[list[str], Body()], db: DbDep):
+    deleted = (
+        db.query(TrackedItem).filter(TrackedItem.id.in_(ids)).all()
+    )
+    for item in deleted:
+        db.delete(item)
+    db.commit()
+    return {"deleted": len(deleted)}
+
+
+@router.post("/bulk-pause", status_code=status.HTTP_200_OK, response_model=dict)
+def bulk_pause(ids: Annotated[list[str], Body()], db: DbDep):
+    items = db.query(TrackedItem).filter(TrackedItem.id.in_(ids)).all()
+    for item in items:
+        item.is_active = False
+        item.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    return {"paused": len(items)}
+
+
+@router.post("/bulk-resume", status_code=status.HTTP_200_OK, response_model=dict)
+def bulk_resume(ids: Annotated[list[str], Body()], db: DbDep):
+    items = db.query(TrackedItem).filter(TrackedItem.id.in_(ids)).all()
+    for item in items:
+        item.is_active = True
+        item.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    return {"resumed": len(items)}
+
+
+# ---------------------------------------------------------------------------
+# Import / Export
+# ---------------------------------------------------------------------------
+
+
+@router.get("/export", response_model=list[dict])
+def export_items(db: DbDep):
+    """Export all tracked items as a portable JSON list."""
+    items = db.query(TrackedItem).order_by(TrackedItem.created_at.asc()).all()
+    return [
+        {
+            "title": item.title,
+            "original_url": item.original_url,
+            "url_template": item.url_template,
+            "chapter_regex": item.chapter_regex,
+            "pattern_source": item.pattern_source,
+            "check_strategy": item.check_strategy,
+            "toc_url": item.toc_url,
+            "category": item.category,
+            "current_chapter": item.current_chapter,
+            "latest_chapter": item.latest_chapter,
+            "check_interval_min": item.check_interval_min,
+            "is_active": item.is_active,
+        }
+        for item in items
+    ]
+
+
+@router.post("/import", response_model=dict, status_code=status.HTTP_201_CREATED)
+def import_items(records: Annotated[list[dict], Body()], db: DbDep):
+    """Import items from an export payload. Skips duplicates (same original_url)."""
+    existing_urls = {row[0] for row in db.query(TrackedItem.original_url).all()}
+    created = 0
+    skipped = 0
+    for rec in records:
+        url = rec.get("original_url", "").strip()
+        if not url or url in existing_urls:
+            skipped += 1
+            continue
+        item = TrackedItem(
+            id=str(uuid.uuid4()),
+            title=rec.get("title"),
+            original_url=url,
+            url_template=rec.get("url_template"),
+            chapter_regex=rec.get("chapter_regex"),
+            pattern_source=rec.get("pattern_source", "AUTO"),
+            check_strategy=rec.get("check_strategy", "INCREMENTAL_PROBE"),
+            toc_url=rec.get("toc_url"),
+            category=rec.get("category"),
+            current_chapter=rec.get("current_chapter"),
+            latest_chapter=rec.get("latest_chapter"),
+            check_interval_min=int(rec.get("check_interval_min") or 60),
+            is_active=bool(rec.get("is_active", True)),
+        )
+        db.add(item)
+        existing_urls.add(url)
+        created += 1
+    db.commit()
+    return {"created": created, "skipped": skipped}

@@ -18,6 +18,8 @@ export interface ItemRead {
   latest_chapter: string | null
   check_interval_min: number
   last_checked_at: string | null
+  consecutive_failures: number
+  last_error: string | null
   is_active: boolean
   created_at: string
   updated_at: string
@@ -85,4 +87,24 @@ export interface CheckAllResult {
     success: boolean
     new_latest_chapter: string | null
   }>
+}
+
+export interface CheckLogEntry {
+  id: string
+  checked_at: string
+  success: boolean
+  previous_latest_chapter: string | null
+  new_latest_chapter: string | null
+  error_message: string | null
+}
+
+export interface BulkActionResult {
+  deleted?: number
+  paused?: number
+  resumed?: number
+}
+
+export interface ImportResult {
+  created: number
+  skipped: number
 }

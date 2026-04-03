@@ -11,17 +11,40 @@ import asyncio
 import logging
 import re
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from datetime import datetime, timezone
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from sqlalchemy.orm import Session
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from models.check_log import ChapterCheckLog
 from models.item import TrackedItem
 from services.pattern_detection import build_chapter_url
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Concurrency guard — limit simultaneous outbound check requests
+# ---------------------------------------------------------------------------
+# Initialised lazily so it is always created on the running event loop.
+_semaphore: asyncio.Semaphore | None = None
+MAX_CONCURRENT_CHECKS = 5
+
+
+def _get_semaphore() -> asyncio.Semaphore:
+    global _semaphore  # noqa: PLW0603
+    if _semaphore is None:
+        _semaphore = asyncio.Semaphore(MAX_CONCURRENT_CHECKS)
+    return _semaphore
+
+
+# ---------------------------------------------------------------------------
+# Per-item rate limiter — prevents hammering via the manual /check endpoint
+# ---------------------------------------------------------------------------
+# Maps item_id → last manually triggered check datetime (UTC)
+_last_manual_check: dict[str, datetime] = {}
+MANUAL_CHECK_COOLDOWN_SECONDS = 60
 
 
 # ---------------------------------------------------------------------------
@@ -36,15 +59,11 @@ class CheckerConfig:
     coarse_step: int = 5
     max_coarse_steps: int = 100
     # Hard wall-clock cap on a single find_latest_chapter call (seconds).
-    # Prevents a probe run from hanging indefinitely when a site returns
-    # 200 for every URL or is extremely slow.
     max_probe_duration_seconds: float = 60.0
     # URL of a table-of-contents page used by ToCScraperStrategy.
     toc_url: str | None = None
-    # Phrases that indicate a soft 404 — the server returns 200 but the page
-    # has no real chapter content. Matched case-insensitively against the
-    # first ``probe_byte_limit`` bytes of the response body.
-    content_error_phrases: tuple[str, ...] = (
+    # Phrases that indicate a soft 404.
+    content_error_phrases: tuple[str, ...] = field(default_factory=lambda: (
         "chapter not available",
         "chapter missing",
         "chapter content is missing",
@@ -55,10 +74,7 @@ class CheckerConfig:
         "content not found",
         "no chapter found",
         "chapter unavailable",
-    )
-    # Maximum response bytes to read before stopping content inspection.
-    # 32 KB is enough to reach the <body> of any page without downloading
-    # the whole thing.
+    ))
     probe_byte_limit: int = 32_768
 
 
@@ -90,6 +106,12 @@ class BaseCheckStrategy(ABC):
 # ---------------------------------------------------------------------------
 
 
+@retry(
+    retry=retry_if_exception_type(httpx.RequestError),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=8),
+    reraise=True,
+)
 async def _probe(
     client: httpx.AsyncClient,
     url: str,
@@ -330,6 +352,8 @@ async def check_item(
     item: TrackedItem,
     db: Session,
     config: CheckerConfig | None = None,
+    *,
+    bypass_rate_limit: bool = False,
 ) -> ChapterCheckLog:
     """
     Run a chapter check for *item*, persist a ChapterCheckLog, and update
@@ -337,6 +361,8 @@ async def check_item(
     is found.
 
     Always returns the log entry regardless of success/failure.
+    Set ``bypass_rate_limit=True`` for scheduler-triggered checks (not user-
+    initiated) so the cooldown only applies to manual /check calls.
     """
     # Deferred import avoids a circular dependency at module load time
     from config import settings  # noqa: PLC0415
@@ -372,34 +398,44 @@ async def check_item(
 
     strategy = STRATEGY_REGISTRY.get(item.check_strategy, IncrementalProbeStrategy())
 
-    try:
-        new_latest = await asyncio.wait_for(
-            strategy.find_latest_chapter(
-                current_latest=item.latest_chapter or item.current_chapter or "0",
-                url_template=item.url_template,
-                config=config,
-            ),
-            timeout=config.max_probe_duration_seconds,
-        )
-        if new_latest is not None:
-            log.new_latest_chapter = new_latest
-            item.latest_chapter = new_latest
-        item.last_checked_at = datetime.now(timezone.utc)
-        log.success = True
-    except asyncio.TimeoutError:
-        logger.warning(
-            "Probe for item %s (%s) exceeded %ss wall-clock limit and was cancelled.",
-            item.id,
-            item.title,
-            config.max_probe_duration_seconds,
-        )
-        log.error_message = (
-            f"Probe timed out after {config.max_probe_duration_seconds:.0f}s. "
-            "Consider reducing coarse_step or max_coarse_steps."
-        )
-    except Exception as exc:  # noqa: BLE001
-        log.error_message = str(exc)[:999]
-        logger.exception("Unexpected error while checking item %s", item.id)
+    async with _get_semaphore():
+        try:
+            new_latest = await asyncio.wait_for(
+                strategy.find_latest_chapter(
+                    current_latest=item.latest_chapter or item.current_chapter or "0",
+                    url_template=item.url_template,
+                    config=config,
+                ),
+                timeout=config.max_probe_duration_seconds,
+            )
+            if new_latest is not None:
+                log.new_latest_chapter = new_latest
+                item.latest_chapter = new_latest
+            item.last_checked_at = datetime.now(timezone.utc)
+            log.success = True
+            # Reset failure tracking on success
+            item.consecutive_failures = 0
+            item.last_error = None
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Probe for item %s (%s) exceeded %ss wall-clock limit and was cancelled.",
+                item.id,
+                item.title,
+                config.max_probe_duration_seconds,
+            )
+            msg = (
+                f"Probe timed out after {config.max_probe_duration_seconds:.0f}s. "
+                "Consider reducing coarse_step or max_coarse_steps."
+            )
+            log.error_message = msg
+            item.consecutive_failures = (item.consecutive_failures or 0) + 1
+            item.last_error = msg
+        except Exception as exc:  # noqa: BLE001
+            msg = str(exc)[:999]
+            log.error_message = msg
+            item.consecutive_failures = (item.consecutive_failures or 0) + 1
+            item.last_error = msg
+            logger.exception("Unexpected error while checking item %s", item.id)
 
     db.add(log)
     db.commit()

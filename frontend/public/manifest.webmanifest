@@ -1,0 +1,17 @@
+{
+  "name": "Chapter Tracker",
+  "short_name": "Tracker",
+  "description": "Track manga, web novels, and more for new chapters.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

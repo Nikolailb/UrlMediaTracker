@@ -9,9 +9,10 @@ interface ItemCardsProps {
   items: ItemRead[]
   onEdit: (item: ItemRead) => void
   onDelete: (item: ItemRead) => void
+  onHistory: (item: ItemRead) => void
 }
 
-export function ItemCards({ items, onEdit, onDelete }: ItemCardsProps) {
+export function ItemCards({ items, onEdit, onDelete, onHistory }: ItemCardsProps) {
   return (
     <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
       {items.map((item) => (
@@ -40,7 +41,7 @@ export function ItemCards({ items, onEdit, onDelete }: ItemCardsProps) {
                 <span className="truncate">{item.original_url}</span>
               </a>
             </div>
-            <ItemActions item={item} onEdit={() => onEdit(item)} onDelete={() => onDelete(item)} />
+            <ItemActions item={item} onEdit={() => onEdit(item)} onDelete={() => onDelete(item)} onHistory={() => onHistory(item)} />
           </div>
 
           {/* Progress */}

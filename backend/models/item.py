@@ -69,6 +69,11 @@ class TrackedItem(Base):
     # Content category tag (free-text enum stored as String for forward compatibility)
     category: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
+    # How many consecutive check failures have occurred (reset to 0 on success)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Error message from the most recent failed check (nullable)
+    last_error: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+
     check_interval_min: Mapped[int] = mapped_column(Integer, default=60, nullable=False)
     last_checked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

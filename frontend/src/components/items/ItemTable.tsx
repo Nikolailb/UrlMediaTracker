@@ -16,9 +16,14 @@ interface ItemTableProps {
   onSort: (key: SortKey) => void
   onEdit: (item: ItemRead) => void
   onDelete: (item: ItemRead) => void
+  onHistory: (item: ItemRead) => void
+  selected: Set<string>
+  onSelect: (id: string) => void
+  onSelectAll: () => void
 }
 
-export function ItemTable({ items, sortKey, sortDir, onSort, onEdit, onDelete }: ItemTableProps) {
+export function ItemTable({ items, sortKey, sortDir, onSort, onEdit, onDelete, onHistory, selected, onSelect, onSelectAll }: ItemTableProps) {
+  const allSelected = items.length > 0 && selected.size === items.length
   function SortButton({ col, label }: { col: SortKey; label: string }) {
     const active = sortKey === col
     const Icon = active ? (sortDir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
@@ -40,6 +45,15 @@ export function ItemTable({ items, sortKey, sortDir, onSort, onEdit, onDelete }:
       <table className="w-full text-sm">
         <thead className="bg-muted/40">
           <tr className="border-b border-border">
+            <th className="pl-4 pr-2 py-3 w-8">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={onSelectAll}
+                className="h-4 w-4 rounded border-border accent-primary"
+                title="Select all"
+              />
+            </th>
             <th className="px-4 py-3 text-left">
               <SortButton col="title" label="Title / URL" />
             </th>
@@ -57,8 +71,17 @@ export function ItemTable({ items, sortKey, sortDir, onSort, onEdit, onDelete }:
           {items.map((item, i) => (
             <tr
               key={item.id}
-              className={`border-b border-border last:border-0 transition-colors hover:bg-muted/20 ${i % 2 === 0 ? '' : 'bg-muted/5'}`}
+              className={`border-b border-border last:border-0 transition-colors hover:bg-muted/20 ${selected.has(item.id) ? 'bg-primary/5' : i % 2 === 0 ? '' : 'bg-muted/5'}`}
             >
+              {/* Checkbox */}
+              <td className="pl-4 pr-2 py-3 w-8">
+                <input
+                  type="checkbox"
+                  checked={selected.has(item.id)}
+                  onChange={() => onSelect(item.id)}
+                  className="h-4 w-4 rounded border-border accent-primary"
+                />
+              </td>
               {/* Title / URL */}
               <td className="px-4 py-3">
                 <div className="flex flex-col gap-0.5 min-w-0">
@@ -108,7 +131,7 @@ export function ItemTable({ items, sortKey, sortDir, onSort, onEdit, onDelete }:
 
               {/* Actions */}
               <td className="px-2 py-3">
-                <ItemActions item={item} onEdit={() => onEdit(item)} onDelete={() => onDelete(item)} />
+                <ItemActions item={item} onEdit={() => onEdit(item)} onDelete={() => onDelete(item)} onHistory={() => onHistory(item)} />
               </td>
             </tr>
           ))}

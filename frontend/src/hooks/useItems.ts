@@ -69,3 +69,44 @@ export function useCheckAll() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ITEMS_KEY }),
   })
 }
+
+export function useCheckHistory(itemId: string | null) {
+  return useQuery({
+    queryKey: ['check-history', itemId],
+    queryFn: () => itemsApi.history(itemId!),
+    enabled: itemId !== null,
+  })
+}
+
+export function useBulkDelete() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (ids: string[]) => itemsApi.bulkDelete(ids),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ITEMS_KEY }),
+  })
+}
+
+export function useBulkPause() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (ids: string[]) => itemsApi.bulkPause(ids),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ITEMS_KEY }),
+  })
+}
+
+export function useBulkResume() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (ids: string[]) => itemsApi.bulkResume(ids),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ITEMS_KEY }),
+  })
+}
+
+export function useImportItems() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (records: unknown[]) => itemsApi.importItems(records),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ITEMS_KEY }),
+  })
+}
+
