@@ -105,6 +105,29 @@ def list_items(
     return [_to_read(i) for i in q.order_by(TrackedItem.created_at.desc()).all()]
 
 
+@router.get("/export", response_model=list[dict])
+def export_items(db: DbDep):
+    """Export all tracked items as a portable JSON list."""
+    items = db.query(TrackedItem).order_by(TrackedItem.created_at.asc()).all()
+    return [
+        {
+            "title": item.title,
+            "original_url": item.original_url,
+            "url_template": item.url_template,
+            "chapter_regex": item.chapter_regex,
+            "pattern_source": item.pattern_source,
+            "check_strategy": item.check_strategy,
+            "toc_url": item.toc_url,
+            "category": item.category,
+            "current_chapter": item.current_chapter,
+            "latest_chapter": item.latest_chapter,
+            "check_interval_min": item.check_interval_min,
+            "is_active": item.is_active,
+        }
+        for item in items
+    ]
+
+
 @router.get("/{item_id}", response_model=ItemRead)
 def get_item(item_id: str, db: DbDep):
     return _to_read(_get_or_404(item_id, db))
@@ -339,29 +362,6 @@ def bulk_resume(ids: Annotated[list[str], Body()], db: DbDep):
 # ---------------------------------------------------------------------------
 # Import / Export
 # ---------------------------------------------------------------------------
-
-
-@router.get("/export", response_model=list[dict])
-def export_items(db: DbDep):
-    """Export all tracked items as a portable JSON list."""
-    items = db.query(TrackedItem).order_by(TrackedItem.created_at.asc()).all()
-    return [
-        {
-            "title": item.title,
-            "original_url": item.original_url,
-            "url_template": item.url_template,
-            "chapter_regex": item.chapter_regex,
-            "pattern_source": item.pattern_source,
-            "check_strategy": item.check_strategy,
-            "toc_url": item.toc_url,
-            "category": item.category,
-            "current_chapter": item.current_chapter,
-            "latest_chapter": item.latest_chapter,
-            "check_interval_min": item.check_interval_min,
-            "is_active": item.is_active,
-        }
-        for item in items
-    ]
 
 
 @router.post("/import", response_model=dict, status_code=status.HTTP_201_CREATED)
