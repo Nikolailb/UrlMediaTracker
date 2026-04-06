@@ -5,8 +5,12 @@ Given a URL, attempts to identify the chapter/episode identifier using a
 ranked cascade of strategies:
 
   1. Keyword match   – recognises prefixes like chapter-, ep-, vol-, etc.  (HIGH confidence)
-  2. Trailing number – last path segment ends with a bare number           (MEDIUM confidence)
-  3. Query parameter – numeric value in a known query-param name           (MEDIUM confidence)
+  2. Query parameter – numeric value in a known query-param name           (MEDIUM confidence)
+  3. Trailing number – last path segment ends with a bare number           (MEDIUM confidence)
+
+Query parameters are checked before the trailing-number fallback so that
+URLs such as ``…/series-name-2?ep=1`` correctly identify ``ep=1`` as the
+episode rather than picking up the season/ID suffix from the path.
 
 A manual regex override (with exactly one capture group) can bypass all
 auto-detection and is always returned with HIGH confidence.
@@ -156,11 +160,11 @@ def _auto_detect(url: str) -> PatternDetectionResult:
     if result:
         return result
 
-    result = _try_trailing_number(url, parsed.path)
+    result = _try_query_param(url, parsed.query)
     if result:
         return result
 
-    result = _try_query_param(url, parsed.query)
+    result = _try_trailing_number(url, parsed.path)
     if result:
         return result
 

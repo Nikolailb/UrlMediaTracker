@@ -23,6 +23,7 @@ class PatternSource(str, PyEnum):
 class CheckStrategy(str, PyEnum):
     INCREMENTAL_PROBE = "INCREMENTAL_PROBE"
     TOC_SCRAPER = "TOC_SCRAPER"
+    TOC_THEN_PROBE = "TOC_THEN_PROBE"
 
 
 class ItemCategory(str, PyEnum):
@@ -76,6 +77,10 @@ class TrackedItem(Base):
 
     check_interval_min: Mapped[int] = mapped_column(Integer, default=60, nullable=False)
     last_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Timestamp of the most recent successful chapter discovery (new chapter found)
+    latest_chapter_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

@@ -1,5 +1,5 @@
 export type PatternSource = 'AUTO' | 'MANUAL'
-export type CheckStrategy = 'INCREMENTAL_PROBE' | 'TOC_SCRAPER'
+export type CheckStrategy = 'INCREMENTAL_PROBE' | 'TOC_SCRAPER' | 'TOC_THEN_PROBE'
 export type PatternConfidence = 'HIGH' | 'MEDIUM' | 'LOW'
 export type ItemCategory = 'Novel' | 'Light Novel' | 'Manhwa' | 'Manhua' | 'Manga' | 'Webtoon' | 'Pornhwa' | 'Comic' | 'Anime'
 export const ITEM_CATEGORIES: ItemCategory[] = ['Novel', 'Light Novel', 'Manhwa', 'Manhua', 'Manga', 'Webtoon', 'Pornhwa', 'Comic', 'Anime']
@@ -18,6 +18,7 @@ export interface ItemRead {
   latest_chapter: string | null
   check_interval_min: number
   last_checked_at: string | null
+  latest_chapter_at: string | null
   consecutive_failures: number
   last_error: string | null
   is_active: boolean

@@ -28,7 +28,7 @@ import { toast } from 'sonner'
 import type { ItemRead } from '@/types/api'
 import { ITEM_CATEGORIES } from '@/types/api'
 
-type SortKey = 'title' | 'created_at' | 'last_checked_at' | 'has_unread'
+type SortKey = 'title' | 'created_at' | 'latest_chapter_at' | 'last_checked_at' | 'has_unread'
 type SortDir = 'asc' | 'desc'
 
 function useWindowWidth() {
@@ -101,6 +101,11 @@ export function ItemList() {
           break
         case 'created_at':
           cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          break
+        case 'latest_chapter_at':
+          cmp =
+            new Date(a.latest_chapter_at ?? 0).getTime() -
+            new Date(b.latest_chapter_at ?? 0).getTime()
           break
         case 'last_checked_at':
           cmp =
@@ -282,6 +287,7 @@ export function ItemList() {
               <DropdownMenuSeparator />
               <DropdownMenuRadioGroup value={sortKey} onValueChange={(v) => setSortKey(v as SortKey)}>
                 <DropdownMenuRadioItem value="created_at">Date added</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="latest_chapter_at">Recently updated</DropdownMenuRadioItem>
                 <DropdownMenuRadioItem value="title">Title</DropdownMenuRadioItem>
                 <DropdownMenuRadioItem value="last_checked_at">Last checked</DropdownMenuRadioItem>
                 <DropdownMenuRadioItem value="has_unread">Unread gap</DropdownMenuRadioItem>

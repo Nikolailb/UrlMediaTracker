@@ -39,6 +39,7 @@ class ItemRead(BaseModel):
     latest_chapter: str | None
     check_interval_min: int
     last_checked_at: datetime | None
+    latest_chapter_at: datetime | None
     consecutive_failures: int
     last_error: str | None
     is_active: bool

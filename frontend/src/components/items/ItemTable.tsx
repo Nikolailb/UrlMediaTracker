@@ -6,7 +6,7 @@ import { ItemActions } from './ItemActions'
 import { RelativeTime } from '@/components/ui/relative-time'
 import type { ItemRead } from '@/types/api'
 
-type SortKey = 'title' | 'created_at' | 'last_checked_at' | 'has_unread'
+type SortKey = 'title' | 'created_at' | 'latest_chapter_at' | 'last_checked_at' | 'has_unread'
 type SortDir = 'asc' | 'desc'
 
 interface ItemTableProps {
@@ -97,13 +97,13 @@ export function ItemTable({ items, sortKey, sortDir, onSort, onEdit, onDelete, o
                     )}
                   </div>
                   <a
-                    href={item.original_url}
+                    href={item.toc_url ?? item.original_url}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary truncate max-w-[200px] sm:max-w-xs"
                   >
                     <ExternalLink className="h-3 w-3 shrink-0" />
-                    <span className="truncate">{item.original_url}</span>
+                    <span className="truncate">{item.toc_url ?? item.original_url}</span>
                   </a>
                   {/* Progress inline on small screens */}
                   <div className="md:hidden mt-1">

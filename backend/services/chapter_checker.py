@@ -337,9 +337,38 @@ class ToCScraperStrategy(BaseCheckStrategy):
         return str(int(max_id)) if max_id == int(max_id) else str(max_id)
 
 
+class FallbackStrategy(BaseCheckStrategy):
+    """
+    Meta-strategy that tries an ordered list of strategies in sequence.
+
+    Returns the result of the first strategy that produces a non-None value.
+    If all strategies return None the method returns None.
+
+    Used for the ``TOC_THEN_PROBE`` preset: scan the table of contents page
+    first (fast, exact), then fall back to sequential HTTP probing when no
+    ToC URL is configured or the ToC scan yields nothing.
+    """
+
+    def __init__(self, strategies: list[BaseCheckStrategy]) -> None:
+        self._strategies = strategies
+
+    async def find_latest_chapter(
+        self,
+        current_latest: str,
+        url_template: str,
+        config: CheckerConfig,
+    ) -> str | None:
+        for strategy in self._strategies:
+            result = await strategy.find_latest_chapter(current_latest, url_template, config)
+            if result is not None:
+                return result
+        return None
+
+
 STRATEGY_REGISTRY: dict[str, BaseCheckStrategy] = {
     "INCREMENTAL_PROBE": IncrementalProbeStrategy(),
     "TOC_SCRAPER": ToCScraperStrategy(),
+    "TOC_THEN_PROBE": FallbackStrategy([ToCScraperStrategy(), IncrementalProbeStrategy()]),
 }
 
 
@@ -411,6 +440,7 @@ async def check_item(
             if new_latest is not None:
                 log.new_latest_chapter = new_latest
                 item.latest_chapter = new_latest
+                item.latest_chapter_at = datetime.now(timezone.utc)
             item.last_checked_at = datetime.now(timezone.utc)
             log.success = True
             # Reset failure tracking on success
