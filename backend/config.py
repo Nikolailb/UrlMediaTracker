@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     MAX_COARSE_STEPS: int = 100
     # Hard wall-clock timeout for a single probe run (seconds).
     MAX_PROBE_DURATION_SECONDS: float = 60.0
+    # Server bind settings
+    HOST: str = "127.0.0.1"
+    PORT: int = 8000
 
     model_config = SettingsConfigDict(
         env_file=".env",

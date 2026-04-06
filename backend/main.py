@@ -58,3 +58,9 @@ app.include_router(patterns.router)
 @app.get("/health", tags=["system"])
 def health():
     return {"status": "ok", "version": app.version}
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("main:app", host=settings.HOST, port=settings.PORT, reload=True)
