@@ -22,23 +22,32 @@ interface ItemTableProps {
   onSelectAll: () => void
 }
 
+interface SortButtonProps {
+  col: SortKey
+  label: string
+  sortKey: SortKey
+  sortDir: SortDir
+  onSort: (key: SortKey) => void
+}
+
+function SortButton({ col, label, sortKey, sortDir, onSort }: SortButtonProps) {
+  const active = sortKey === col
+  const Icon = active ? (sortDir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className={`-ml-2 gap-1 text-xs font-semibold uppercase tracking-wide ${active ? 'text-foreground' : 'text-muted-foreground'}`}
+      onClick={() => onSort(col)}
+    >
+      {label}
+      <Icon className={`h-3 w-3 ${active ? 'opacity-100' : 'opacity-40'}`} />
+    </Button>
+  )
+}
+
 export function ItemTable({ items, sortKey, sortDir, onSort, onEdit, onDelete, onHistory, selected, onSelect, onSelectAll }: ItemTableProps) {
   const allSelected = items.length > 0 && selected.size === items.length
-  function SortButton({ col, label }: { col: SortKey; label: string }) {
-    const active = sortKey === col
-    const Icon = active ? (sortDir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
-    return (
-      <Button
-        variant="ghost"
-        size="sm"
-        className={`-ml-2 gap-1 text-xs font-semibold uppercase tracking-wide ${active ? 'text-foreground' : 'text-muted-foreground'}`}
-        onClick={() => onSort(col)}
-      >
-        {label}
-        <Icon className={`h-3 w-3 ${active ? 'opacity-100' : 'opacity-40'}`} />
-      </Button>
-    )
-  }
 
   return (
     <div className="rounded-xl border border-border overflow-hidden">
@@ -55,13 +64,13 @@ export function ItemTable({ items, sortKey, sortDir, onSort, onEdit, onDelete, o
               />
             </th>
             <th className="px-4 py-3 text-left">
-              <SortButton col="title" label="Title / URL" />
+              <SortButton col="title" label="Title / URL" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
             </th>
             <th className="px-4 py-3 text-left hidden md:table-cell">
-              <SortButton col="has_unread" label="Progress" />
+              <SortButton col="has_unread" label="Progress" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
             </th>
             <th className="px-4 py-3 text-left hidden lg:table-cell">
-              <SortButton col="last_checked_at" label="Last checked" />
+              <SortButton col="last_checked_at" label="Last checked" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
             </th>
             <th className="px-4 py-3 text-left hidden sm:table-cell">Status</th>
             <th className="px-4 py-3 w-12" />
