@@ -13,6 +13,7 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 from sqlalchemy.orm import Session
@@ -28,6 +29,19 @@ from models.item import TrackedItem
 from services.pattern_detection import build_chapter_url
 
 logger = logging.getLogger(__name__)
+
+
+def _normalise_probe_url(url: str) -> str:
+    parts = urlsplit(url)
+    path = parts.path.rstrip("/") or "/"
+    return urlunsplit(
+        (parts.scheme.lower(), parts.netloc.lower(), path, parts.query, "")
+    )
+
+
+def _redirect_kept_same_target(requested_url: str, final_url: str) -> bool:
+    return _normalise_probe_url(requested_url) == _normalise_probe_url(final_url)
+
 
 # ---------------------------------------------------------------------------
 # Concurrency guard — limit simultaneous outbound check requests
@@ -142,6 +156,12 @@ async def _probe(
             return False
         if resp.status_code >= 300:
             logger.debug("Probe got HTTP %s for %s", resp.status_code, url)
+            return False
+        final_url = str(resp.url)
+        if resp.history and not _redirect_kept_same_target(url, final_url):
+            logger.debug(
+                "Probe redirected away from chapter URL: %s -> %s", url, final_url
+            )
             return False
         raw = b""
         async for chunk in resp.aiter_bytes(chunk_size=4_096):
