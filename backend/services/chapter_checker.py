@@ -12,11 +12,16 @@ import logging
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import httpx
 from sqlalchemy.orm import Session
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
 
 from models.check_log import ChapterCheckLog
 from models.item import TrackedItem
@@ -63,18 +68,22 @@ class CheckerConfig:
     # URL of a table-of-contents page used by ToCScraperStrategy.
     toc_url: str | None = None
     # Phrases that indicate a soft 404.
-    content_error_phrases: tuple[str, ...] = field(default_factory=lambda: (
-        "chapter not available",
-        "chapter missing",
-        "chapter content is missing",
-        "content is missing or does not exist",
-        "chapter does not exist",
-        "chapter not found",
-        "page not found",
-        "content not found",
-        "no chapter found",
-        "chapter unavailable",
-    ))
+    content_error_phrases: tuple[str, ...] = field(
+        default_factory=lambda: (
+            "chapter not available",
+            "chapter missing",
+            "chapter content is missing",
+            "content is missing or does not exist",
+            "chapter does not exist",
+            "chapter not found",
+            "page not found",
+            "content not found",
+            "no chapter found",
+            "chapter unavailable",
+            "moved permanently",
+            "404 not found",
+        )
+    )
     probe_byte_limit: int = 32_768
 
 
@@ -130,6 +139,9 @@ async def _probe(
     """
     async with client.stream("GET", url) as resp:
         if resp.status_code >= 400:
+            return False
+        if resp.status_code >= 300:
+            logger.debug("Probe got HTTP %s for %s", resp.status_code, url)
             return False
         raw = b""
         async for chunk in resp.aiter_bytes(chunk_size=4_096):
@@ -359,7 +371,9 @@ class FallbackStrategy(BaseCheckStrategy):
         config: CheckerConfig,
     ) -> str | None:
         for strategy in self._strategies:
-            result = await strategy.find_latest_chapter(current_latest, url_template, config)
+            result = await strategy.find_latest_chapter(
+                current_latest, url_template, config
+            )
             if result is not None:
                 return result
         return None
@@ -368,7 +382,9 @@ class FallbackStrategy(BaseCheckStrategy):
 STRATEGY_REGISTRY: dict[str, BaseCheckStrategy] = {
     "INCREMENTAL_PROBE": IncrementalProbeStrategy(),
     "TOC_SCRAPER": ToCScraperStrategy(),
-    "TOC_THEN_PROBE": FallbackStrategy([ToCScraperStrategy(), IncrementalProbeStrategy()]),
+    "TOC_THEN_PROBE": FallbackStrategy(
+        [ToCScraperStrategy(), IncrementalProbeStrategy()]
+    ),
 }
 
 
