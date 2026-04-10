@@ -34,7 +34,9 @@ DbDep = Annotated[Session, Depends(get_db)]
 def _get_or_404(item_id: str, db: Session) -> TrackedItem:
     item = db.get(TrackedItem, item_id)
     if not item:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found.")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Item not found."
+        )
     return item
 
 
@@ -82,7 +84,9 @@ def create_item(payload: ItemCreate, db: DbDep):
         category=payload.category,
         # Auto-select strategy: use ToC scraper when a ToC URL is provided
         check_strategy=(
-            CheckStrategy.TOC_SCRAPER if payload.toc_url else CheckStrategy.INCREMENTAL_PROBE
+            CheckStrategy.TOC_THEN_PROBE
+            if payload.toc_url
+            else CheckStrategy.INCREMENTAL_PROBE
         ),
     )
     db.add(item)
@@ -330,9 +334,7 @@ def get_check_history(item_id: str, db: DbDep, limit: int = 20):
 
 @router.post("/bulk-delete", status_code=status.HTTP_200_OK, response_model=dict)
 def bulk_delete(ids: Annotated[list[str], Body()], db: DbDep):
-    deleted = (
-        db.query(TrackedItem).filter(TrackedItem.id.in_(ids)).all()
-    )
+    deleted = db.query(TrackedItem).filter(TrackedItem.id.in_(ids)).all()
     for item in deleted:
         db.delete(item)
     db.commit()
