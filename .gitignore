@@ -32,6 +32,7 @@ WHEELS/
 htmlcov/
 coverage.xml
 *.coveragerc
+temp.py
 
 # ── Environment & secrets ────────────────────────────────────────────────────
 .env

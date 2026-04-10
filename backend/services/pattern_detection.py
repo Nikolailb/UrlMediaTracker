@@ -14,6 +14,11 @@ episode rather than picking up the season/ID suffix from the path.
 
 A manual regex override (with exactly one capture group) can bypass all
 auto-detection and is always returned with HIGH confidence.
+
+For some sites (for example Webtoons), the canonical chapter identifier
+lives in a query parameter like ``episode_no`` while the path segment is
+just a redirectable slug. In those cases we prioritize specific query
+parameter names before path keyword matching.
 """
 
 import re
@@ -35,12 +40,12 @@ class PatternConfidence(str, Enum):
 
 @dataclass
 class PatternDetectionResult:
-    url_template: str | None        # e.g. https://example.com/novel/chapter-{n}
-    chapter_regex: str | None       # e.g. chapter-(\d+(?:\.\d+)?[a-z]?)
-    current_chapter: str | None     # e.g. "183"
+    url_template: str | None  # e.g. https://example.com/novel/chapter-{n}
+    chapter_regex: str | None  # e.g. chapter-(\d+(?:\.\d+)?[a-z]?)
+    current_chapter: str | None  # e.g. "183"
     confidence: PatternConfidence
-    strategy_used: str              # keyword_match | trailing_number | query_param | manual | none
-    pattern_source: str             # AUTO | MANUAL
+    strategy_used: str  # keyword_match | trailing_number | query_param | manual | none
+    pattern_source: str  # AUTO | MANUAL
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +161,14 @@ def _apply_manual_regex(url: str, pattern: str) -> PatternDetectionResult:
 def _auto_detect(url: str) -> PatternDetectionResult:
     parsed = urlparse(url)
 
+    # Prioritize explicit ID parameters used by some readers where the path
+    # is only a slug/canonical title that can redirect.
+    result = _try_query_param(
+        url, parsed.query, candidate_names=["episode_no", "chapter_no", "ep_no"]
+    )
+    if result:
+        return result
+
     result = _try_keyword_match(url, parsed.path)
     if result:
         return result
@@ -223,7 +236,6 @@ def _try_trailing_number(url: str, path: str) -> PatternDetectionResult | None:
 
     # Strip file extension so numbers like "3090461" in "3090461.html" are found
     ext_m = _EXTENSION_RE.search(last)
-    ext = ext_m.group(0) if ext_m else ""
     bare = last[: ext_m.start()] if ext_m else last
 
     m = _TRAILING_NUMBER_RE.search(bare)
@@ -244,7 +256,7 @@ def _try_trailing_number(url: str, path: str) -> PatternDetectionResult | None:
         return None
 
     num_offset = last.rfind(m.group(0))
-    abs_start = seg_pos + 1 + num_offset   # +1 skips the leading "/"
+    abs_start = seg_pos + 1 + num_offset  # +1 skips the leading "/"
     abs_end = abs_start + len(m.group(0))
     template = url[:abs_start] + "{n}" + url[abs_end:]
 
@@ -258,10 +270,27 @@ def _try_trailing_number(url: str, path: str) -> PatternDetectionResult | None:
     )
 
 
-def _try_query_param(url: str, query: str) -> PatternDetectionResult | None:
+def _try_query_param(
+    url: str,
+    query: str,
+    candidate_names: list[str] | None = None,
+) -> PatternDetectionResult | None:
     """Strategy 3 — numeric chapter identifier in a known query-parameter name."""
     params = parse_qs(query)
-    candidate_names = ["chapter", "ch", "chap", "ep", "episode", "page", "p", "num"]
+    if candidate_names is None:
+        candidate_names = [
+            "chapter",
+            "ch",
+            "chap",
+            "ep",
+            "episode",
+            "episode_no",
+            "chapter_no",
+            "ep_no",
+            "page",
+            "p",
+            "num",
+        ]
 
     for name in candidate_names:
         if name not in params:

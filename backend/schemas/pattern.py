@@ -1,6 +1,6 @@
 from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, Field
 
 
 class PatternConfidence(str, Enum):
@@ -13,7 +13,10 @@ class PatternDetectionRequest(BaseModel):
     url: str
     # Optional user-supplied regex; must have exactly one capture group
     # containing the chapter identifier, e.g. r"chapter-(\d+)"
-    manual_regex: str | None = None
+    manual_regex: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("manual_regex", "custom_regex"),
+    )
 
 
 class PatternDetectionResult(BaseModel):

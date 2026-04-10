@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, Field
 
 from models.item import PatternSource, CheckStrategy, ItemCategory
 
@@ -8,7 +8,10 @@ from models.item import PatternSource, CheckStrategy, ItemCategory
 class ItemCreate(BaseModel):
     url: str
     title: str | None = None
-    manual_regex: str | None = None
+    manual_regex: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("manual_regex", "custom_regex"),
+    )
     check_interval_min: int = 60
     toc_url: str | None = None
     category: ItemCategory | None = None
@@ -16,7 +19,10 @@ class ItemCreate(BaseModel):
 
 class ItemUpdate(BaseModel):
     title: str | None = None
-    manual_regex: str | None = None
+    manual_regex: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("manual_regex", "custom_regex"),
+    )
     check_interval_min: int | None = None
     current_chapter: str | None = None
     is_active: bool | None = None

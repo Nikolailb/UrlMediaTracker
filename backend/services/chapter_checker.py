@@ -13,7 +13,7 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
 import httpx
 from sqlalchemy.orm import Session
@@ -41,6 +41,22 @@ def _normalise_probe_url(url: str) -> str:
 
 def _redirect_kept_same_target(requested_url: str, final_url: str) -> bool:
     return _normalise_probe_url(requested_url) == _normalise_probe_url(final_url)
+
+
+def _redirect_kept_query_identity(requested_url: str, final_url: str) -> bool:
+    """Return True when redirect only canonicalizes path while preserving query."""
+    req = urlsplit(requested_url)
+    fin = urlsplit(final_url)
+
+    if (
+        req.scheme.lower() != fin.scheme.lower()
+        or req.netloc.lower() != fin.netloc.lower()
+    ):
+        return False
+
+    req_query = sorted(parse_qsl(req.query, keep_blank_values=True))
+    fin_query = sorted(parse_qsl(fin.query, keep_blank_values=True))
+    return req_query == fin_query
 
 
 # ---------------------------------------------------------------------------
@@ -159,10 +175,16 @@ async def _probe(
             return False
         final_url = str(resp.url)
         if resp.history and not _redirect_kept_same_target(url, final_url):
+            if not _redirect_kept_query_identity(url, final_url):
+                logger.debug(
+                    "Probe redirected away from chapter URL: %s -> %s", url, final_url
+                )
+                return False
             logger.debug(
-                "Probe redirected away from chapter URL: %s -> %s", url, final_url
+                "Probe redirected to canonical chapter URL (query preserved): %s -> %s",
+                url,
+                final_url,
             )
-            return False
         raw = b""
         async for chunk in resp.aiter_bytes(chunk_size=4_096):
             raw += chunk
