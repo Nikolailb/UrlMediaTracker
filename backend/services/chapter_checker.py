@@ -44,7 +44,12 @@ def _redirect_kept_same_target(requested_url: str, final_url: str) -> bool:
 
 
 def _redirect_kept_query_identity(requested_url: str, final_url: str) -> bool:
-    """Return True when redirect only canonicalizes path while preserving query."""
+    """Return True when redirect only canonicalizes the chapter URL.
+
+    Accept redirects that preserve scheme, host, query parameters, and path
+    depth. Reject redirects that bounce back to a parent series/ToC page,
+    which often happens for unreleased chapters.
+    """
     req = urlsplit(requested_url)
     fin = urlsplit(final_url)
 
@@ -56,7 +61,12 @@ def _redirect_kept_query_identity(requested_url: str, final_url: str) -> bool:
 
     req_query = sorted(parse_qsl(req.query, keep_blank_values=True))
     fin_query = sorted(parse_qsl(fin.query, keep_blank_values=True))
-    return req_query == fin_query
+    if req_query != fin_query:
+        return False
+
+    req_segments = [segment for segment in req.path.split("/") if segment]
+    fin_segments = [segment for segment in fin.path.split("/") if segment]
+    return len(req_segments) == len(fin_segments)
 
 
 # ---------------------------------------------------------------------------
