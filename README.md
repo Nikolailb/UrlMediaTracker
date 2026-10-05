@@ -1,56 +1,21 @@
-# Smart Bookmark & Chapter Tracker
+# UrlMediaTracker
 
-A fullstack web application for tracking progress across serialized online content — manga, web novels, and blogs.
+A self-hosted reading queue for serialized novels, comics, manga, and webtoons. Add a series or chapter URL, check for new chapters, resume reading, and keep personal progress. It targets a household and modest hardware such as a Raspberry Pi.
 
-## Quick start
+## Project contract
 
-```powershell
-npm run dev
-```
+[SPEC.md](SPEC.md) contains testable requirements, [ARCHITECTURE.md](ARCHITECTURE.md) the components and deployment, [DATA_MODEL.md](DATA_MODEL.md) the storage model, [ROADMAP.md](ROADMAP.md) reviewable milestones, [DECISIONS.md](DECISIONS.md) product tradeoffs, and [AGENTS.md](AGENTS.md) future coding rules. Requirement IDs are stable. Roadmap features are not deployed features until marked complete.
 
-This starts both the backend and frontend concurrently:
-- **Backend** → http://localhost:8000 (FastAPI + SQLite)
-- **Frontend** → http://localhost:5173 (React + Vite)
+## Current repository and setup
 
-### Prerequisites
+- `backend/`: FastAPI, SQLAlchemy, Alembic, APScheduler, SQLite.
+- `frontend/`: React, TypeScript, Vite, Tailwind CSS, TanStack Query.
+- `backend/tests/`: backend behavior tests.
 
-- Python 3.11+ with the `backend/env/` virtualenv already set up
-- Node.js 18+
+Use Python 3.12 and Node.js 24. Create `backend/env`, install `backend/requirements.txt` and `pytest`, then run `alembic upgrade head` from `backend`. Run `python -m admin_bootstrap` from `backend` to set the first admin password; existing entries are assigned to that account. Run `npm ci` at the root and in `frontend`. `npm run dev` starts Uvicorn at `http://localhost:8000` and Vite at `http://localhost:5173`; API docs are at `/docs`. Copy `backend/.env.example` to `backend/.env` as needed. Run backend tests from `backend` with `python -m pytest tests`; run `npm --prefix frontend run build` and `npm --prefix frontend run lint`.
 
-## Repository structure
+Sign in to your own reading queue. An admin can create expiring invite links and select a member's library. Safe view starts on for each sign-in; reveal sensitive entries deliberately before editing them. Add a series or chapter URL to inspect the checking method and site access before saving. Switch between table and cover cards, filter by category or unread, and use the next chapter and mark-read actions. ZIP export requires password confirmation and includes sensitive entries and covers; import deduplicates within the selected account. Legacy JSON import/export remains available.
 
-```
-progress_tracking_service/
-  backend/    # FastAPI application — see backend/README.md
-  frontend/   # React + TypeScript — see frontend/README.md
-  package.json  # Root scripts (dev, dev:backend, dev:frontend)
-```
+## Raspberry Pi
 
-## Available scripts (root)
-
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start backend + frontend together |
-| `npm run dev:backend` | Start FastAPI only |
-| `npm run dev:frontend` | Start Vite only |
-
-## Core features
-
-- **Smart pattern detection** — paste any chapter URL and the system automatically extracts the template (e.g. `chapter-{n}`), with manual regex override for edge cases
-- **Progress tracking** — current vs latest chapter with a visual indicator
-- **Automated update checks** — periodic background checks using configurable intervals per item
-- **Sortable & filterable list** — search, filter by status or unread, sort by any column
-- **Responsive UI** — table layout on desktop, card grid on mobile
-- **Dark mode** — system default, user-overridable via header toggle
-
-## Tech stack
-
-| Layer | Technology |
-|-------|-----------|
-| Backend API | Python · FastAPI · Pydantic · SQLAlchemy |
-| Database | SQLite (dev) → PostgreSQL-ready |
-| Migrations | Alembic |
-| Background jobs | APScheduler |
-| Frontend | React 19 · TypeScript · Vite |
-| Styling | Tailwind CSS v3 · CSS variables |
-| Data fetching | TanStack Query v5 |
+KeiHub manages the separate tracker Compose project, Caddy route, CI-gated updater, and encrypted restic backup. The database is `/srv/keihub/data/tracker/main.db` and covers are in `/srv/keihub/data/tracker/covers`; they must be backed up and restored together. Install the matching KeiHub tracker Compose, production requirements, and updater changes before publishing this schema upgrade. Consult `D:\Projects\Web\KeiHub\OPERATIONS.md` for deployment and restore. Preserve existing records and a verified backup before migration. The service is intended for LAN and router-VPN access without mandatory cloud services.

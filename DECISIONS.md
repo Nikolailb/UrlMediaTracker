@@ -1,0 +1,27 @@
+# Decisions
+
+Record changes here with date, reason, alternatives, and requirement IDs.
+
+## D-001 — Focused media tracker (2026-10-05)
+Keep household tasks and other apps separate. A broad home-app data model was considered; the focused reading queue is simpler to maintain. REQ-004, REQ-009.
+
+## D-002 — Personal libraries and admin support (2026-10-05)
+Each user owns a library and progress; admin may explicitly access another. Shared catalog and shared progress were considered. REQ-001, REQ-002.
+
+## D-003 — Safe view per session (2026-10-05)
+One sensitive flag excludes entries from normal surfaces when safe view is on; new sessions start safe. Account authorization protects users from each other. Default-visible and several privacy flags were considered. REQ-003, REQ-012.
+
+## D-004 — Dedicated checker first (2026-10-05)
+Use site adapter before generic methods, allow item override, and fall through only on `UNSUPPORTED`. This prevents speculative probing after unchanged or blocked results. FreeWebNovel is first. REQ-005–REQ-008.
+
+## D-005 — Manual tracking for blocked sites (2026-10-05)
+Warn but permit saving. No Cloudflare bypass or required Pi browser automation. Hard rejection and bypass were considered. REQ-004, REQ-006.
+
+## D-006 — Small catalog model (2026-10-05)
+Keep one category, add one note and cover, allow safe auto-fetch and upload. No arbitrary attachments or rich catalog fields. REQ-009, REQ-010.
+
+## D-007 — Preserve Pi operations (2026-10-05)
+Keep SQLite, separate Compose service, Caddy, LAN/VPN access, and KeiHub's updater and encrypted backup. Extra database and required cloud identity were rejected for maintenance cost. REQ-014.
+
+## D-008 — Explicit complete export (2026-10-05)
+Password-confirmed full ZIP includes sensitive records. A safe-view filtered archive would be an incomplete backup. REQ-003, REQ-012.
