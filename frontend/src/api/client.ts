@@ -70,6 +70,15 @@ export async function del(path: string): Promise<void> {
   return handleResponse<void>(res)
 }
 
+export async function put<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'PUT',
+    headers: headers(true),
+    body: JSON.stringify(body),
+  })
+  return handleResponse<T>(res)
+}
+
 export async function postFile<T>(path: string, file: File): Promise<T> {
   const body = new FormData()
   body.append('file', file)

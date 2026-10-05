@@ -11,6 +11,8 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from models.item import TrackedItem
+from models.filter_preset import FilterPreset
+from routers.filter_presets import PresetInput, BUILTIN_NAMES, _apply
 from services.auth import DbDep, IdentityDep, verify_password
 from services.covers import cover_path, save_cover
 
@@ -52,6 +54,12 @@ def export_archive(payload: ExportRequest, identity: IdentityDep, db: DbDep):
                 entry["cover"] = name
             data.append(entry)
         archive.writestr("items.json", json.dumps(data, ensure_ascii=False))
+        presets = db.query(FilterPreset).filter(FilterPreset.user_id == identity.library_user_id).order_by(FilterPreset.name_key).all()
+        archive.writestr("presets.json", json.dumps([
+            {"name": row.name, "categories": json.loads(row.categories_json),
+             "unread_only": row.unread_only, "include_inactive": row.include_inactive}
+            for row in presets
+        ], ensure_ascii=False))
     return Response(buffer.getvalue(), media_type="application/zip",
                     headers={"Content-Disposition": "attachment; filename=tracker-account.zip",
                              "Cache-Control": "no-store"})
@@ -75,6 +83,21 @@ async def import_archive(identity: IdentityDep, db: DbDep, file: UploadFile = Fi
             records = json.loads(archive.read("items.json"))
             if not isinstance(records, list) or len(records) > 1000:
                 raise ValueError("Invalid item list.")
+            preset_records = json.loads(archive.read("presets.json")) if "presets.json" in names else []
+            if not isinstance(preset_records, list) or len(preset_records) > 50:
+                raise ValueError("Invalid preset list.")
+            existing_names = {name for (name,) in db.query(FilterPreset.name_key).filter(
+                FilterPreset.user_id == identity.library_user_id).all()}
+            preset_pending = []
+            for value in preset_records:
+                preset = PresetInput.model_validate(value)
+                key = preset.name.casefold()
+                if key in BUILTIN_NAMES or key in existing_names:
+                    continue
+                preset_pending.append(preset)
+                existing_names.add(key)
+            if len(existing_names) > 50:
+                raise ValueError("Preset limit reached.")
             existing = {_normalized(url) for (url,) in db.query(TrackedItem.original_url).filter(
                 TrackedItem.user_id == identity.library_user_id).all()}
             pending = []
@@ -105,6 +128,10 @@ async def import_archive(identity: IdentityDep, db: DbDep, file: UploadFile = Fi
 
     created_files = []
     try:
+        for preset in preset_pending:
+            row = FilterPreset(user_id=identity.library_user_id)
+            _apply(row, preset)
+            db.add(row)
         for record, image in pending:
             values = {key: record.get(key) for key in FIELDS}
             values["id"] = str(uuid.uuid4())

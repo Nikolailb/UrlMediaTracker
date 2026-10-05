@@ -28,3 +28,6 @@ Password-confirmed full ZIP includes sensitive records. A safe-view filtered arc
 
 ## D-009 — Compatible dependency updates (2026-10-05)
 Refresh the frontend lockfile within declared version ranges and keep Tailwind CSS 3 for this release. The audited update reduced reported advisories from 17 to 5 and passed lint and builds on Windows and the Pi. The remaining five are in the Tailwind 3 build tool chain; removing them currently requires a Tailwind 4 migration and a separate UI review. This build tool chain is not served to tracker users. REQ-014.
+
+## D-010 — Saved filter presets (2026-10-05)
+Use a compact picker instead of a horizontally scrolling category chip strip. Built-in Images includes all current visual categories, including Anime; Words includes Novel and Light Novel; Unread spans all categories. Custom presets belong to one account and combine multiple categories with unread and active status. Built-ins are always available; custom presets can be edited or deleted. Search, sort, and session safe view remain independent. Persistent built-in copies and an expanding chip strip were considered; virtual built-ins and one picker keep the interface and storage simpler. REQ-009, REQ-011.

@@ -49,9 +49,9 @@ Acceptance: 644-to-5682 is held, one-chapter increase applies, and pending/revie
 ## Daily use and portability
 
 ### REQ-009 — Queue, views, filters
-Keep the table and add a selectable cover-card view on desktop/tablet. Offer one-tap chips for the existing single category, unread, and safe view. The reading queue remains home; no separate analytics dashboard.
+Keep the table and add a selectable cover-card view on desktop/tablet. Replace the category chip strip with a compact preset picker that works at phone width. Provide built-in Images (Manhwa, Manhua, Manga, Webtoon, Pornhwa, Comic, Anime), Words (Novel, Light Novel), and Unread presets. An account can create, rename, change, and delete its own additional presets. A preset stores an OR list of categories, unread-only, and whether inactive entries appear; an empty category list means all categories. Search, sort, and safe view are independent and are not saved in presets. Built-ins remain available and cannot be changed. The reading queue remains home; no separate analytics dashboard.
 
-Acceptance: combined filters and either view show the same authorized set; switching views preserves filters.
+Acceptance: selecting each preset applies its criteria in both views; the account can save a combined filter, reload, edit it, and delete it; another account cannot access that preset through the API. Manual filter changes are marked as a custom filter until saved. The picker and editor fit at 360 px without a horizontal filter scrollbar. Safe view still excludes sensitive entries regardless of preset.
 
 ### REQ-010 — Notes and covers
 Support an optional short note and one locally stored cover. Try safe metadata fetch; allow upload, replacement, and removal. No other file attachments. Missing covers use a placeholder.
@@ -64,9 +64,9 @@ Make open-next and mark-read prominent touch actions on phones. Search, filters,
 Acceptance: core actions work at 360 px width with touch and keyboard access.
 
 ### REQ-012 — Portable account archive
-An explicit password-confirmed full export produces a versioned ZIP containing entries, progress, notes, sensitive entries, and covers. Import targets the selected authorized account and deduplicates normalized URLs within it. Support legacy JSON import where safe. Operational backup is separate.
+An explicit password-confirmed full export produces a versioned ZIP containing entries, progress, notes, sensitive entries, covers, and custom filter presets. Import targets the selected authorized account and deduplicates normalized URLs and preset names within it. Support legacy JSON import where safe. Operational backup is separate.
 
-Acceptance: ZIP round-trip reproduces representative data; malformed archives cause no partial import; full export never silently omits sensitive entries.
+Acceptance: ZIP round-trip reproduces representative data and custom presets; malformed archives cause no partial import; full export never silently omits sensitive entries.
 
 ### REQ-013 — In-app feedback
 Show unread, failed-check, and pending-review states in the queue. No push, email, or cloud notification service.

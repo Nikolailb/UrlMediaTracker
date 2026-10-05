@@ -17,6 +17,7 @@ from models.base import Base  # noqa: E402
 import models.user       # noqa: F401, E402 — registers User with Base
 import models.item       # noqa: F401, E402 — registers TrackedItem with Base
 import models.check_log  # noqa: F401, E402 — registers ChapterCheckLog with Base
+import models.filter_preset  # noqa: F401, E402
 # ---------------------------------------------------------------------------
 
 # this is the Alembic Config object, which provides

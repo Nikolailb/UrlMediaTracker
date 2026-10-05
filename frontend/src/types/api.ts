@@ -4,6 +4,17 @@ export type PatternConfidence = 'HIGH' | 'MEDIUM' | 'LOW'
 export type ItemCategory = 'Novel' | 'Light Novel' | 'Manhwa' | 'Manhua' | 'Manga' | 'Webtoon' | 'Pornhwa' | 'Comic' | 'Anime'
 export const ITEM_CATEGORIES: ItemCategory[] = ['Novel', 'Light Novel', 'Manhwa', 'Manhua', 'Manga', 'Webtoon', 'Pornhwa', 'Comic', 'Anime']
 
+export interface FilterPreset {
+  id: string
+  name: string
+  categories: ItemCategory[]
+  unread_only: boolean
+  include_inactive: boolean
+  builtin: boolean
+}
+
+export type FilterPresetInput = Omit<FilterPreset, 'id' | 'builtin'>
+
 export interface ItemRead {
   id: string
   title: string | null

@@ -44,6 +44,11 @@ import { chapterToFloat } from "@/lib/utils";
 import { toast } from "sonner";
 import type { ItemRead } from "@/types/api";
 import { ITEM_CATEGORIES } from "@/types/api";
+import type { FilterPreset, ItemCategory } from "@/types/api";
+import { useFilterPresets } from '@/hooks/useFilterPresets'
+import { useAuth } from '@/auth/context'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { FilterPresetDialog } from './FilterPresetDialog'
 import { SiteTestDialog } from './SiteTestDialog'
 import { ArchiveDialog } from './ArchiveDialog'
 
@@ -66,18 +71,26 @@ function useWindowWidth() {
 }
 
 export function ItemList() {
+  const { selectedUser } = useAuth();
+  return <ItemListContent key={selectedUser} />;
+}
+
+function ItemListContent() {
   const [addOpen, setAddOpen] = useState(false);
   const [editItem, setEditItem] = useState<ItemRead | null>(null);
   const [deleteItem, setDeleteItem] = useState<ItemRead | null>(null);
   const [historyItem, setHistoryItem] = useState<ItemRead | null>(null);
   const [siteTestOpen, setSiteTestOpen] = useState(false)
   const [archiveOpen, setArchiveOpen] = useState(false)
+  const [presetDialogOpen, setPresetDialogOpen] = useState(false)
+  const [editingPreset, setEditingPreset] = useState<FilterPreset | null>(null)
+  const [activePresetId, setActivePresetId] = useState('all')
   const [view, setView] = useState<'table' | 'cards'>(() => (localStorage.getItem('tracker-view') === 'cards' ? 'cards' : 'table'))
 
   const [search, setSearch] = useState("");
   const [showInactive, setShowInactive] = useState(true);
   const [showUnreadOnly, setShowUnreadOnly] = useState(false);
-  const [categoryFilter, setCategoryFilter] = useState<string>("");
+  const [categories, setCategories] = useState<ItemCategory[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>("latest_chapter_at");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
@@ -86,6 +99,7 @@ export function ItemList() {
   const importRef = useRef<HTMLInputElement>(null);
 
   const { data: items, isLoading, error } = useItems();
+  const { data: presets = [] } = useFilterPresets();
   const width = useWindowWidth();
   const isMobile = width < 768;
   const activeView = isMobile ? 'cards' : view
@@ -94,6 +108,23 @@ export function ItemList() {
   const bulkPause = useBulkPause();
   const bulkResume = useBulkResume();
   const importItems = useImportItems();
+
+  const activePreset = presets.find((preset) => preset.id === activePresetId)
+  const initialPreset = useMemo(() => ({ categories, unread_only: showUnreadOnly, include_inactive: showInactive }), [categories, showUnreadOnly, showInactive])
+
+  function applyPreset(preset: FilterPreset | null) {
+    setCategories(preset?.categories ?? [])
+    setShowUnreadOnly(preset?.unread_only ?? false)
+    setShowInactive(preset?.include_inactive ?? true)
+    setActivePresetId(preset?.id ?? 'all')
+  }
+
+  function toggleCategory(category: ItemCategory) {
+    setCategories((previous) => previous.includes(category)
+      ? previous.filter((value) => value !== category)
+      : [...previous, category])
+    setActivePresetId('custom')
+  }
 
   function handleSort(key: SortKey) {
     if (key === sortKey) {
@@ -110,8 +141,8 @@ export function ItemList() {
 
     if (!showInactive) result = result.filter((i) => i.is_active);
     if (showUnreadOnly) result = result.filter((i) => i.has_unread === true);
-    if (categoryFilter)
-      result = result.filter((i) => i.category === categoryFilter);
+    if (categories.length)
+      result = result.filter((i) => categories.includes(i.category as ItemCategory));
 
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -161,7 +192,7 @@ export function ItemList() {
     search,
     showInactive,
     showUnreadOnly,
-    categoryFilter,
+    categories,
     sortKey,
     sortDir,
   ]);
@@ -274,7 +305,7 @@ export function ItemList() {
   const activeFilterCount =
     (showUnreadOnly ? 1 : 0) +
     (!showInactive ? 1 : 0) +
-    (categoryFilter ? 1 : 0);
+    (categories.length ? 1 : 0);
 
   return (
     <div className="space-y-4">
@@ -287,11 +318,26 @@ export function ItemList() {
         onChange={handleImportFile}
       />
 
-      {/* Toolbar */}
-      <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Quick filters">
-        <Button size="sm" variant={!categoryFilter && !showUnreadOnly ? 'default' : 'outline'} onClick={() => { setCategoryFilter(''); setShowUnreadOnly(false) }}>All</Button>
-        <Button size="sm" variant={showUnreadOnly ? 'default' : 'outline'} onClick={() => setShowUnreadOnly((v) => !v)}>Unread</Button>
-        {ITEM_CATEGORIES.map((category) => <Button key={category} size="sm" variant={categoryFilter === category ? 'default' : 'outline'} onClick={() => setCategoryFilter(categoryFilter === category ? '' : category)} className="shrink-0">{category}</Button>)}
+      {/* Compact preset picker, including on phones. */}
+      <div className="flex items-center gap-2 min-w-0" aria-label="Saved filters">
+        <label htmlFor="preset-picker" className="sr-only">Filter preset</label>
+        <Select value={activePresetId} onValueChange={(id) => {
+          if (id === 'all') applyPreset(null)
+          else if (id !== 'custom') applyPreset(presets.find((preset) => preset.id === id) ?? null)
+        }}>
+          <SelectTrigger id="preset-picker" className="h-9 flex-1 min-w-0 max-w-xs" aria-label="Filter preset">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="max-w-[calc(100vw-2rem)]">
+            <SelectItem value="all">All items</SelectItem>
+            {activePresetId === 'custom' && <SelectItem value="custom">Custom filter</SelectItem>}
+            {presets.map((preset) => <SelectItem key={preset.id} value={preset.id}>{preset.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Button size="sm" variant="outline" className="shrink-0" onClick={() => { setEditingPreset(null); setPresetDialogOpen(true) }}>Save</Button>
+        {activePreset && !activePreset.builtin && (
+          <Button size="sm" variant="outline" className="shrink-0" onClick={() => { setEditingPreset(activePreset); setPresetDialogOpen(true) }}>Edit</Button>
+        )}
       </div>
       <p className="text-xs text-muted-foreground">{filtered.filter((item) => item.has_unread).length} unread · {filtered.filter((item) => item.pending_latest_chapter).length} pending review · {filtered.filter((item) => item.consecutive_failures > 0).length} check issues</p>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -336,7 +382,8 @@ export function ItemList() {
                     onSelect={() => {
                       setShowInactive(true);
                       setShowUnreadOnly(false);
-                      setCategoryFilter("");
+                      setCategories([]);
+                      setActivePresetId('all');
                     }}
                   >
                     Clear filters
@@ -346,32 +393,24 @@ export function ItemList() {
               <div className="overflow-y-auto max-h-[min(24rem,calc(100dvh-8rem))] py-1">
                 <DropdownMenuCheckboxItem
                   checked={showInactive}
-                  onCheckedChange={setShowInactive}
+                  onCheckedChange={(value) => { setShowInactive(value); setActivePresetId('custom') }}
                 >
                   Show inactive items
                 </DropdownMenuCheckboxItem>
                 <DropdownMenuCheckboxItem
                   checked={showUnreadOnly}
-                  onCheckedChange={setShowUnreadOnly}
+                  onCheckedChange={(value) => { setShowUnreadOnly(value); setActivePresetId('custom') }}
                 >
                   Unread only
                 </DropdownMenuCheckboxItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuLabel>Category</DropdownMenuLabel>
+                <DropdownMenuLabel>Categories (any selected)</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuRadioGroup
-                  value={categoryFilter}
-                  onValueChange={setCategoryFilter}
-                >
-                  <DropdownMenuRadioItem value="">
-                    All categories
-                  </DropdownMenuRadioItem>
                   {ITEM_CATEGORIES.map((c) => (
-                    <DropdownMenuRadioItem key={c} value={c}>
+                    <DropdownMenuCheckboxItem key={c} checked={categories.includes(c)} onCheckedChange={() => toggleCategory(c)} onSelect={(event) => event.preventDefault()}>
                       {c}
-                    </DropdownMenuRadioItem>
+                    </DropdownMenuCheckboxItem>
                   ))}
-                </DropdownMenuRadioGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuLabel>Sort by</DropdownMenuLabel>
                 <DropdownMenuSeparator />
@@ -549,6 +588,14 @@ export function ItemList() {
       <AddItemDialog open={addOpen} onOpenChange={setAddOpen} />
       <SiteTestDialog open={siteTestOpen} onOpenChange={setSiteTestOpen} />
       <ArchiveDialog open={archiveOpen} onOpenChange={setArchiveOpen} />
+      <FilterPresetDialog
+        open={presetDialogOpen}
+        onOpenChange={setPresetDialogOpen}
+        preset={editingPreset}
+        initial={initialPreset}
+        onSaved={applyPreset}
+        onDeleted={() => applyPreset(null)}
+      />
       <EditItemDialog
         key={editItem?.id ?? "edit-empty"}
         item={editItem}

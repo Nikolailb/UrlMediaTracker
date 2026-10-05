@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import settings
 from database import SessionLocal
 from models.user import LoginSession, User
-from routers import archive, auth, items, patterns, tools
+from routers import archive, auth, filter_presets, items, patterns, tools
 from services.auth import token_hash
 from services.scheduler import start_scheduler, stop_scheduler
 
@@ -56,6 +56,7 @@ app.include_router(auth.router)
 app.include_router(patterns.router)
 app.include_router(tools.router)
 app.include_router(archive.router)
+app.include_router(filter_presets.router)
 
 
 @app.middleware("http")
