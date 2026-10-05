@@ -10,6 +10,7 @@ register it in STRATEGY_REGISTRY to add site-specific scrapers later.
 import asyncio
 import logging
 import re
+from decimal import Decimal, InvalidOperation
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -29,6 +30,14 @@ from models.item import TrackedItem
 from services.pattern_detection import build_chapter_url
 
 logger = logging.getLogger(__name__)
+
+
+class ProbeBlocked(Exception):
+    """A source presented a browser challenge during a chapter probe."""
+
+
+class ProbeFailed(Exception):
+    """A chapter probe could not establish a trustworthy unchanged result."""
 
 
 def _normalise_probe_url(url: str) -> str:
@@ -178,11 +187,20 @@ async def _probe(
     handle retries/logging uniformly.
     """
     async with client.stream("GET", url) as resp:
+        if resp.status_code in {403, 503}:
+            challenge_body = bytearray()
+            async for chunk in resp.aiter_bytes():
+                challenge_body.extend(chunk[:max(0, 32768 - len(challenge_body))])
+                if len(challenge_body) >= 32768:
+                    break
+            from services.site_checker import _challenge
+            if _challenge(resp.status_code, bytes(challenge_body), dict(getattr(resp, "headers", {}))):
+                raise ProbeBlocked("Likely browser challenge")
+            raise ProbeFailed(f"HTTP {resp.status_code} during probe")
         if resp.status_code >= 400:
             return False
         if resp.status_code >= 300:
-            logger.debug("Probe got HTTP %s for %s", resp.status_code, url)
-            return False
+            raise ProbeFailed(f"HTTP {resp.status_code} during probe")
         final_url = str(resp.url)
         if resp.history and not _redirect_kept_same_target(url, final_url):
             if not _redirect_kept_query_identity(url, final_url):
@@ -201,6 +219,9 @@ async def _probe(
             if len(raw) >= config.probe_byte_limit:
                 break
     text = raw.decode("utf-8", errors="replace").lower()
+    from services.site_checker import _challenge
+    if _challenge(resp.status_code, bytes(raw), dict(getattr(resp, "headers", {}))):
+        raise ProbeBlocked("Likely browser challenge")
     return not any(phrase in text for phrase in config.content_error_phrases)
 
 
@@ -250,6 +271,8 @@ class IncrementalProbeStrategy(BaseCheckStrategy):
         async with httpx.AsyncClient(
             timeout=config.timeout,
             follow_redirects=True,
+            transport=__import__("services.site_checker", fromlist=["PublicHTTPTransport"]).PublicHTTPTransport(),
+            trust_env=False,
             headers={"User-Agent": "ChapterTracker/1.0 (chapter availability check)"},
         ) as client:
 
@@ -275,7 +298,7 @@ class IncrementalProbeStrategy(BaseCheckStrategy):
                         break
                 except httpx.RequestError as exc:
                     logger.warning("Network error probing %s: %s", probe_url, exc)
-                    break
+                    raise ProbeFailed("Network error during probe") from exc
 
             # ------------------------------------------------------------------
             # Phase 2: fine stepping within (coarse_low, coarse_miss) — only
@@ -295,7 +318,7 @@ class IncrementalProbeStrategy(BaseCheckStrategy):
                             break
                     except httpx.RequestError as exc:
                         logger.warning("Network error probing %s: %s", probe_url, exc)
-                        break
+                        raise ProbeFailed("Network error during probe") from exc
 
         return found_latest
 
@@ -353,6 +376,8 @@ class ToCScraperStrategy(BaseCheckStrategy):
         async with httpx.AsyncClient(
             timeout=config.timeout,
             follow_redirects=True,
+            transport=__import__("services.site_checker", fromlist=["PublicHTTPTransport"]).PublicHTTPTransport(),
+            trust_env=False,
             headers={"User-Agent": "ChapterTracker/1.0 (chapter availability check)"},
         ) as client:
             try:
@@ -481,39 +506,52 @@ async def check_item(
         success=False,
     )
 
-    if not item.url_template:
-        log.error_message = "No URL template — cannot probe for new chapters."
-        db.add(log)
-        db.commit()
-        return log
-
     if not item.is_active:
         log.error_message = "Item is inactive."
+        log.outcome = "UNSUPPORTED"
         db.add(log)
         db.commit()
         return log
 
-    strategy = STRATEGY_REGISTRY.get(item.check_strategy, IncrementalProbeStrategy())
+    from services.site_checker import check_source
 
     async with _get_semaphore():
         try:
-            new_latest = await asyncio.wait_for(
-                strategy.find_latest_chapter(
-                    current_latest=item.latest_chapter or item.current_chapter or "0",
-                    url_template=item.url_template,
-                    config=config,
-                ),
-                timeout=config.max_probe_duration_seconds,
-            )
-            if new_latest is not None:
-                log.new_latest_chapter = new_latest
-                item.latest_chapter = new_latest
-                item.latest_chapter_at = datetime.now(timezone.utc)
+            result = await asyncio.wait_for(check_source(item, config), timeout=config.max_probe_duration_seconds)
+            log.outcome = result.outcome
+            item.last_outcome = result.outcome
+            if result.outcome == "NEW" and result.chapter == item.dismissed_candidate:
+                result.outcome = "UNCHANGED"
+                log.outcome = item.last_outcome = "UNCHANGED"
+            if result.outcome == "NEW" and result.chapter:
+                suspicious = False
+                if item.latest_chapter:
+                    try:
+                        previous = Decimal(item.latest_chapter)
+                        candidate = Decimal(result.chapter)
+                        suspicious = candidate - previous > 50 and candidate > previous * Decimal("1.25")
+                    except InvalidOperation:
+                        suspicious = True
+                if suspicious:
+                    item.pending_latest_chapter = result.chapter
+                    item.pending_chapter_url = result.chapter_url
+                    item.last_outcome = log.outcome = "PENDING"
+                    log.pending_chapter = result.chapter
+                else:
+                    log.new_latest_chapter = result.chapter
+                    item.latest_chapter = result.chapter
+                    item.latest_chapter_at = datetime.now(timezone.utc)
             item.last_checked_at = datetime.now(timezone.utc)
-            log.success = True
-            # Reset failure tracking on success
-            item.consecutive_failures = 0
-            item.last_error = None
+            log.success = log.outcome in {"NEW", "UNCHANGED"}
+            if result.outcome in {"NEW", "UNCHANGED"}:
+                item.consecutive_failures = 0
+                item.last_error = None
+            elif result.outcome == "BLOCKED":
+                item.last_error = result.detail or "Source appears blocked."
+            elif result.outcome in {"FAILED", "UNSUPPORTED"}:
+                item.consecutive_failures = (item.consecutive_failures or 0) + 1
+                item.last_error = result.detail or result.outcome.title()
+            log.error_message = item.last_error if not log.success else None
         except asyncio.TimeoutError:
             logger.warning(
                 "Probe for item %s (%s) exceeded %ss wall-clock limit and was cancelled.",
@@ -526,11 +564,13 @@ async def check_item(
                 "Consider reducing coarse_step or max_coarse_steps."
             )
             log.error_message = msg
+            log.outcome = item.last_outcome = "FAILED"
             item.consecutive_failures = (item.consecutive_failures or 0) + 1
             item.last_error = msg
         except Exception as exc:  # noqa: BLE001
             msg = str(exc)[:999]
             log.error_message = msg
+            log.outcome = item.last_outcome = "FAILED"
             item.consecutive_failures = (item.consecutive_failures or 0) + 1
             item.last_error = msg
             logger.exception("Unexpected error while checking item %s", item.id)

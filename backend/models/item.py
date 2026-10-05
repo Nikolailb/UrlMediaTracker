@@ -69,6 +69,15 @@ class TrackedItem(Base):
 
     # Content category tag (free-text enum stored as String for forward compatibility)
     category: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    series_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    strategy_override: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    is_sensitive: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    note: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    cover_filename: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    pending_latest_chapter: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    pending_chapter_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    dismissed_candidate: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    last_outcome: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
     # How many consecutive check failures have occurred (reset to 0 on success)
     consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

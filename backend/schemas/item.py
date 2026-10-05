@@ -1,6 +1,8 @@
 from datetime import datetime
 
-from pydantic import AliasChoices, BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field, field_validator
+from typing import Literal
+from urllib.parse import urlsplit
 
 from models.item import PatternSource, CheckStrategy, ItemCategory
 
@@ -15,6 +17,24 @@ class ItemCreate(BaseModel):
     check_interval_min: int = 60
     toc_url: str | None = None
     category: ItemCategory | None = None
+    is_sensitive: bool = False
+    note: str | None = Field(default=None, max_length=2000)
+    strategy_override: Literal["FREEWEBNOVEL", "TOC_SCRAPER", "INCREMENTAL_PROBE", "TOC_THEN_PROBE"] | None = None
+    current_chapter: str | None = None
+    latest_chapter: str | None = None
+
+    @field_validator("url", "toc_url")
+    @classmethod
+    def web_url(cls, value: str | None) -> str | None:
+        if value is not None:
+            try:
+                parts = urlsplit(value)
+                valid = parts.scheme in {"http", "https"} and bool(parts.hostname) and not parts.username and not parts.password
+            except ValueError:
+                valid = False
+            if not valid:
+                raise ValueError("Use an HTTP(S) URL without credentials.")
+        return value
 
 
 class ItemUpdate(BaseModel):
@@ -29,6 +49,15 @@ class ItemUpdate(BaseModel):
     toc_url: str | None = None
     check_strategy: CheckStrategy | None = None
     category: ItemCategory | None = None
+    is_sensitive: bool | None = None
+    note: str | None = Field(default=None, max_length=2000)
+    latest_chapter: str | None = None
+    strategy_override: Literal["FREEWEBNOVEL", "TOC_SCRAPER", "INCREMENTAL_PROBE", "TOC_THEN_PROBE"] | None = None
+
+    @field_validator("toc_url")
+    @classmethod
+    def web_url(cls, value: str | None) -> str | None:
+        return ItemCreate.web_url(value)
 
 
 class ItemRead(BaseModel):
@@ -41,6 +70,15 @@ class ItemRead(BaseModel):
     check_strategy: str
     toc_url: str | None
     category: str | None
+    series_url: str | None
+    strategy_override: str | None
+    is_sensitive: bool
+    note: str | None
+    cover_filename: str | None
+    pending_latest_chapter: str | None
+    pending_chapter_url: str | None
+    dismissed_candidate: str | None
+    last_outcome: str | None
     current_chapter: str | None
     latest_chapter: str | None
     check_interval_min: int

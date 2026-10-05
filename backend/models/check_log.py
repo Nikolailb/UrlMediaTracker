@@ -23,5 +23,7 @@ class ChapterCheckLog(Base):
     new_latest_chapter: Mapped[str | None] = mapped_column(String(50), nullable=True)
     success: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     error_message: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    outcome: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    pending_chapter: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     item: Mapped["TrackedItem"] = relationship("TrackedItem", back_populates="check_logs")

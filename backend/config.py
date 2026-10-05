@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     # Server bind settings
     HOST: str = "127.0.0.1"
     PORT: int = 8000
+    COVER_DIR: str = "./covers"
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -6,7 +6,6 @@ Every 5 minutes it queries all active TrackedItems and runs a chapter
 check for any that are overdue (based on their individual check_interval_min).
 """
 
-import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -53,18 +52,18 @@ async def run_due_checks() -> None:
             return
 
         logger.info("Scheduler: running checks for %d item(s).", len(due))
-        tasks = [
-            check_item(item, db, bypass_rate_limit=True)
-            for item in due
-        ]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        for item, result in zip(due, results):
-            if isinstance(result, Exception):
+        # A SQLAlchemy Session is not safe to share across concurrent tasks.
+        # Household-scale queues are small, so checks run sequentially here.
+        for item in due:
+            try:
+                await check_item(item, db, bypass_rate_limit=True)
+            except Exception as exc:
+                db.rollback()
                 logger.error(
                     "Scheduler: check failed for item %s (%s): %s",
                     item.id,
                     item.title,
-                    result,
+                    exc,
                 )
     finally:
         db.close()

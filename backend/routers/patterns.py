@@ -1,11 +1,12 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
+from services.auth import current_identity
 
 from schemas.pattern import PatternConfidence
 from schemas.pattern import PatternDetectionRequest
 from schemas.pattern import PatternDetectionResult as PatternDetectionResultSchema
 from services.pattern_detection import detect_pattern
 
-router = APIRouter(prefix="/patterns", tags=["patterns"])
+router = APIRouter(prefix="/patterns", tags=["patterns"], dependencies=[Depends(current_identity)])
 
 
 @router.post(

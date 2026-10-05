@@ -27,6 +27,7 @@ WHEELS/
 
 # Test / coverage
 .pytest_cache/
+.pytest-tmp/
 .coverage
 .coverage.*
 htmlcov/
@@ -70,3 +71,10 @@ desktop.ini
 *.log
 logs/
 npm-debug.log*
+backend/env/
+backend/*.db
+backend/covers/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/.pytest_cache/
+*.zip
