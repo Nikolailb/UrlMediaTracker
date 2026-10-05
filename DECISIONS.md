@@ -25,3 +25,6 @@ Keep SQLite, separate Compose service, Caddy, LAN/VPN access, and KeiHub's updat
 
 ## D-008 — Explicit complete export (2026-10-05)
 Password-confirmed full ZIP includes sensitive records. A safe-view filtered archive would be an incomplete backup. REQ-003, REQ-012.
+
+## D-009 — Compatible dependency updates (2026-10-05)
+Refresh the frontend lockfile within declared version ranges and keep Tailwind CSS 3 for this release. The audited update reduced reported advisories from 17 to 5 and passed lint and builds on Windows and the Pi. The remaining five are in the Tailwind 3 build tool chain; removing them currently requires a Tailwind 4 migration and a separate UI review. This build tool chain is not served to tracker users. REQ-014.
