@@ -1,4 +1,4 @@
-import { del, get, patch, post } from './client'
+import { del, get, patch, post, postFile } from './client'
 import type {
   BulkActionResult,
   CheckAllResult,
@@ -35,6 +35,9 @@ export const itemsApi = {
   next: (id: string) => get<NextChapterResponse>(`/items/${id}/next`),
 
   check: (id: string) => post<CheckResult>(`/items/${id}/check`),
+  resolvePending: (id: string, chapter: string) => post<ItemRead>(`/items/${id}/resolve-pending`, { chapter }),
+  uploadCover: (id: string, file: File) => postFile<ItemRead>(`/items/${id}/cover`, file),
+  removeCover: (id: string) => del(`/items/${id}/cover`),
 
   checkAll: () => post<CheckAllResult>('/items/check-all'),
 

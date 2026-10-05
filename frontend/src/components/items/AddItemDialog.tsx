@@ -14,6 +14,9 @@ import { toast } from 'sonner'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { PatternDetectionResult } from '@/types/api'
 import { ITEM_CATEGORIES } from '@/types/api'
+import { post } from '@/api/client'
+
+type SourcePreview = { title: string | null; current_chapter: string | null; latest_chapter: string | null; cover_url: string | null; checker: string; access: { state: string; status_code: number | null } }
 
 interface AddItemDialogProps {
   open: boolean
@@ -35,6 +38,11 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
   const [tocUrl, setTocUrl] = useState('')
   const [category, setCategory] = useState('')
   const [preview, setPreview] = useState<PatternDetectionResult | null>(null)
+  const [sourcePreview, setSourcePreview] = useState<SourcePreview | null>(null)
+  const [previewPending, setPreviewPending] = useState(false)
+  const [note, setNote] = useState('')
+  const [sensitive, setSensitive] = useState(false)
+  const [currentChapter, setCurrentChapter] = useState('')
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const detect = usePatternDetect()
@@ -51,6 +59,10 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
       setTocUrl('')
       setCategory('')
       setPreview(null)
+      setSourcePreview(null)
+      setNote('')
+      setSensitive(false)
+      setCurrentChapter('')
     }
   }, [open])
 
@@ -68,9 +80,20 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, manualRegex])
 
-  function handleNext() {
+  async function handleNext() {
     if (!url.trim()) return
     setStep(2)
+    setPreviewPending(true)
+    try {
+      const result = await post<SourcePreview>('/tools/preview', { url: url.trim() })
+      setSourcePreview(result)
+      if (!title && result.title) setTitle(result.title)
+      if (!currentChapter && result.current_chapter) setCurrentChapter(result.current_chapter)
+    } catch {
+      setSourcePreview(null)
+    } finally {
+      setPreviewPending(false)
+    }
   }
 
   function handleSubmit() {
@@ -82,6 +105,10 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
         check_interval_min: parseInt(interval) || 60,
         toc_url: tocUrl.trim() || null,
         category: category || null,
+        note: note.trim() || null,
+        is_sensitive: sensitive,
+        current_chapter: currentChapter.trim() || null,
+        latest_chapter: sourcePreview?.latest_chapter || preview?.current_chapter || null,
       },
       {
         onSuccess: () => {
@@ -100,7 +127,7 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
           <DialogTitle>{step === 1 ? 'Add tracked item' : 'Confirm details'}</DialogTitle>
           <DialogDescription>
             {step === 1
-              ? 'Paste the URL of a specific chapter or episode — we\'ll detect the pattern automatically.'
+              ? 'Paste a series or chapter URL. We will preview what can be detected.'
               : 'Review the detected pattern and optionally add a title.'}
           </DialogDescription>
         </DialogHeader>
@@ -184,6 +211,15 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
 
         {step === 2 && (
           <div className="space-y-4">
+            {previewPending && <p className="text-sm text-muted-foreground">Checking source…</p>}
+            {sourcePreview && <div className="rounded-lg border p-3 text-xs space-y-1">
+              <p>Source: <strong>{sourcePreview.access.state.replaceAll('_', ' ')}</strong>{sourcePreview.access.status_code ? ` (HTTP ${sourcePreview.access.status_code})` : ''}</p>
+              <p>Checker: <strong>{sourcePreview.checker}</strong></p>
+              {sourcePreview.latest_chapter && <p>Latest found: chapter {sourcePreview.latest_chapter}</p>}
+              {sourcePreview.current_chapter && <p>Current from URL: chapter {sourcePreview.current_chapter}</p>}
+              {sourcePreview.cover_url && <img src={sourcePreview.cover_url} alt="Detected cover preview" className="h-20 max-w-20 object-cover rounded" />}
+              {sourcePreview.access.state !== 'REACHABLE' && <p className="text-amber-600">Automatic checking may fail. You can still track this manually.</p>}
+            </div>}
             {/* Title */}
             <div className="space-y-1.5">
               <Label htmlFor="title">
@@ -199,6 +235,7 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
             </div>
 
             {/* Check interval */}
+            <div className="space-y-1.5"><Label htmlFor="add-current">Current chapter</Label><Input id="add-current" value={currentChapter} onChange={(e) => setCurrentChapter(e.target.value)} placeholder="Optional reading position" /></div>
             <div className="space-y-1.5">
               <Label htmlFor="interval">Check interval (minutes)</Label>
               <Input
@@ -247,6 +284,9 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
                 </SelectContent>
               </Select>
             </div>
+
+            <div className="space-y-1.5"><Label htmlFor="add-note">Personal note (optional)</Label><Input id="add-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} /></div>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={sensitive} onChange={(e) => setSensitive(e.target.checked)} /> Sensitive entry</label>
 
             {/* Summary */}
             {preview?.url_template && (

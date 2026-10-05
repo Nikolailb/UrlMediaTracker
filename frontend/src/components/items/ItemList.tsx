@@ -8,6 +8,8 @@ import {
   Upload,
   PauseCircle,
   PlayCircle,
+  LayoutGrid,
+  List,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,6 +44,8 @@ import { chapterToFloat } from "@/lib/utils";
 import { toast } from "sonner";
 import type { ItemRead } from "@/types/api";
 import { ITEM_CATEGORIES } from "@/types/api";
+import { SiteTestDialog } from './SiteTestDialog'
+import { ArchiveDialog } from './ArchiveDialog'
 
 type SortKey =
   | "title"
@@ -66,6 +70,9 @@ export function ItemList() {
   const [editItem, setEditItem] = useState<ItemRead | null>(null);
   const [deleteItem, setDeleteItem] = useState<ItemRead | null>(null);
   const [historyItem, setHistoryItem] = useState<ItemRead | null>(null);
+  const [siteTestOpen, setSiteTestOpen] = useState(false)
+  const [archiveOpen, setArchiveOpen] = useState(false)
+  const [view, setView] = useState<'table' | 'cards'>(() => (localStorage.getItem('tracker-view') === 'cards' ? 'cards' : 'table'))
 
   const [search, setSearch] = useState("");
   const [showInactive, setShowInactive] = useState(true);
@@ -81,6 +88,7 @@ export function ItemList() {
   const { data: items, isLoading, error } = useItems();
   const width = useWindowWidth();
   const isMobile = width < 768;
+  const activeView = isMobile ? 'cards' : view
 
   const bulkDelete = useBulkDelete();
   const bulkPause = useBulkPause();
@@ -280,6 +288,12 @@ export function ItemList() {
       />
 
       {/* Toolbar */}
+      <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Quick filters">
+        <Button size="sm" variant={!categoryFilter && !showUnreadOnly ? 'default' : 'outline'} onClick={() => { setCategoryFilter(''); setShowUnreadOnly(false) }}>All</Button>
+        <Button size="sm" variant={showUnreadOnly ? 'default' : 'outline'} onClick={() => setShowUnreadOnly((v) => !v)}>Unread</Button>
+        {ITEM_CATEGORIES.map((category) => <Button key={category} size="sm" variant={categoryFilter === category ? 'default' : 'outline'} onClick={() => setCategoryFilter(categoryFilter === category ? '' : category)} className="shrink-0">{category}</Button>)}
+      </div>
+      <p className="text-xs text-muted-foreground">{filtered.filter((item) => item.has_unread).length} unread · {filtered.filter((item) => item.pending_latest_chapter).length} pending review · {filtered.filter((item) => item.consecutive_failures > 0).length} check issues</p>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
@@ -291,7 +305,10 @@ export function ItemList() {
           />
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setSiteTestOpen(true)}>Test site</Button>
+          <Button variant="outline" size="sm" onClick={() => setArchiveOpen(true)}>Archive</Button>
+          {!isMobile && <Button variant="outline" size="sm" title={view === 'table' ? 'Card view' : 'Table view'} onClick={() => { const next = view === 'table' ? 'cards' : 'table'; setView(next); localStorage.setItem('tracker-view', next) }}>{view === 'table' ? <LayoutGrid className="h-4 w-4" /> : <List className="h-4 w-4" />}</Button>}
           {/* Filter / sort menu */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -421,7 +438,7 @@ export function ItemList() {
 
       {/* Bulk action bar */}
       {visibleSelected.size > 0 && (
-        <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/40 px-4 py-2 text-sm">
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/40 px-4 py-2 text-sm">
           <span className="font-medium">{visibleSelected.size} selected</span>
           <Button
             variant="outline"
@@ -506,7 +523,7 @@ export function ItemList() {
       {!isLoading &&
         !error &&
         filtered.length > 0 &&
-        (isMobile ? (
+        (activeView === 'cards' ? (
           <ItemCards
             items={filtered}
             onEdit={setEditItem}
@@ -530,6 +547,8 @@ export function ItemList() {
 
       {/* Dialogs */}
       <AddItemDialog open={addOpen} onOpenChange={setAddOpen} />
+      <SiteTestDialog open={siteTestOpen} onOpenChange={setSiteTestOpen} />
+      <ArchiveDialog open={archiveOpen} onOpenChange={setArchiveOpen} />
       <EditItemDialog
         key={editItem?.id ?? "edit-empty"}
         item={editItem}

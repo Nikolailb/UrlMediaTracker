@@ -20,9 +20,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { CheckStrategy, ItemRead } from "@/types/api";
+import type { ItemRead } from "@/types/api";
 import { ITEM_CATEGORIES } from "@/types/api";
 import { cn } from "@/lib/utils";
+import { itemsApi } from '@/api/items'
+import { useQueryClient } from '@tanstack/react-query'
+import { useAuth } from '@/auth/context'
 
 interface EditItemDialogProps {
   item: ItemRead | null;
@@ -32,10 +35,11 @@ interface EditItemDialogProps {
 type Tab = "general" | "detection";
 
 const STRATEGIES: {
-  value: CheckStrategy;
+  value: string;
   label: string;
   description: string;
 }[] = [
+  { value: 'AUTO', label: 'Automatic', description: 'Prefer a dedicated site checker when available.' },
   {
     value: "INCREMENTAL_PROBE",
     label: "Sequential URL probing",
@@ -69,9 +73,15 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
   const [isActive, setIsActive] = useState(item?.is_active ?? true);
   const [tocUrl, setTocUrl] = useState(item?.toc_url ?? "");
   const [category, setCategory] = useState(item?.category ?? "");
-  const [checkStrategy, setCheckStrategy] = useState<CheckStrategy>(
-    item?.check_strategy ?? "INCREMENTAL_PROBE",
+  const [checkStrategy, setCheckStrategy] = useState<string>(
+    item?.strategy_override ?? "AUTO",
   );
+  const [note, setNote] = useState(item?.note ?? '')
+  const [isSensitive, setIsSensitive] = useState(item?.is_sensitive ?? false)
+  const [latestChapter, setLatestChapter] = useState(item?.latest_chapter ?? '')
+  const [pendingDecision, setPendingDecision] = useState(item?.pending_latest_chapter ?? '')
+  const qc = useQueryClient()
+  const { selectedUser } = useAuth()
 
   const update = useUpdateItem();
 
@@ -88,7 +98,10 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
           is_active: isActive,
           toc_url: tocUrl.trim() || null,
           category: category || null,
-          check_strategy: checkStrategy,
+          strategy_override: checkStrategy === 'AUTO' ? null : checkStrategy,
+          note: note.trim() || null,
+          is_sensitive: isSensitive,
+          latest_chapter: (latestChapter.trim() || null) !== item.latest_chapter ? (latestChapter.trim() || null) : undefined,
         },
       },
       {
@@ -153,6 +166,19 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
                   placeholder="e.g. 183"
                 />
               </div>
+              <div className="space-y-1.5"><Label htmlFor="edit-latest">Latest accepted chapter</Label><Input id="edit-latest" value={latestChapter} onChange={(e) => setLatestChapter(e.target.value)} /></div>
+              {item?.pending_latest_chapter && <div className="rounded border border-amber-500/40 p-3 space-y-2 text-sm">
+                <p>Check found chapter {item.pending_latest_chapter}. Review before accepting.</p>
+                <Input aria-label="Reviewed chapter" value={pendingDecision} onChange={(e) => setPendingDecision(e.target.value)} />
+                <Button size="sm" onClick={async () => { try { await itemsApi.resolvePending(item.id, pendingDecision); qc.invalidateQueries({ queryKey: ['items'] }); onOpenChange(false); toast.success('Chapter result resolved.') } catch { toast.error('Could not resolve result.') } }}>Use reviewed chapter</Button>
+              </div>}
+              <div className="space-y-1.5"><Label htmlFor="edit-note">Personal note</Label><Input id="edit-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} /></div>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={isSensitive} onChange={(e) => setIsSensitive(e.target.checked)} /> Sensitive entry</label>
+              <div className="space-y-2 text-sm"><Label>Cover image</Label>
+                {item?.cover_filename && <img src={`/api/items/${item.id}/cover${selectedUser ? `?user_id=${encodeURIComponent(selectedUser)}` : ''}`} alt="Current cover" className="h-24 w-16 object-cover rounded" />}
+                <Input type="file" accept="image/png,image/jpeg,image/webp" onChange={async (e) => { const file = e.target.files?.[0]; if (!file || !item) return; try { await itemsApi.uploadCover(item.id, file); qc.invalidateQueries({ queryKey: ['items'] }); toast.success('Cover updated.') } catch (error) { toast.error(error instanceof Error ? error.message : 'Cover upload failed.') } }} />
+                {item?.cover_filename && <Button size="sm" variant="outline" onClick={async () => { await itemsApi.removeCover(item.id); qc.invalidateQueries({ queryKey: ['items'] }) }}>Remove cover</Button>}
+              </div>
 
               <div className="space-y-1.5">
                 <Label htmlFor="edit-category">
@@ -209,7 +235,7 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
                 <Label htmlFor="edit-strategy">Check strategy</Label>
                 <Select
                   value={checkStrategy}
-                  onValueChange={(v) => setCheckStrategy(v as CheckStrategy)}
+                  onValueChange={setCheckStrategy}
                 >
                   <SelectTrigger id="edit-strategy">
                     <SelectValue />

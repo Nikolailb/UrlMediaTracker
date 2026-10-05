@@ -14,6 +14,15 @@ export interface ItemRead {
   check_strategy: CheckStrategy
   toc_url: string | null
   category: string | null
+  series_url: string | null
+  strategy_override: string | null
+  is_sensitive: boolean
+  note: string | null
+  cover_filename: string | null
+  pending_latest_chapter: string | null
+  pending_chapter_url: string | null
+  dismissed_candidate: string | null
+  last_outcome: string | null
   current_chapter: string | null
   latest_chapter: string | null
   check_interval_min: number
@@ -35,6 +44,11 @@ export interface ItemCreate {
   check_interval_min?: number
   toc_url?: string | null
   category?: string | null
+  is_sensitive?: boolean
+  note?: string | null
+  strategy_override?: string | null
+  current_chapter?: string | null
+  latest_chapter?: string | null
 }
 
 export interface ItemUpdate {
@@ -46,6 +60,10 @@ export interface ItemUpdate {
   toc_url?: string | null
   check_strategy?: CheckStrategy | null
   category?: string | null
+  is_sensitive?: boolean | null
+  note?: string | null
+  latest_chapter?: string | null
+  strategy_override?: string | null
 }
 
 export interface MarkReadRequest {
@@ -75,9 +93,11 @@ export interface PatternDetectionResult {
 
 export interface CheckResult {
   success: boolean
+  outcome: string | null
   previous_latest_chapter: string | null
   new_latest_chapter: string | null
   error_message: string | null
+  pending_chapter: string | null
 }
 
 export interface CheckAllResult {
@@ -94,6 +114,8 @@ export interface CheckLogEntry {
   id: string
   checked_at: string
   success: boolean
+  outcome: string | null
+  pending_chapter: string | null
   previous_latest_chapter: string | null
   new_latest_chapter: string | null
   error_message: string | null

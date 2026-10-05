@@ -104,6 +104,9 @@ export function ItemTable({ items, sortKey, sortDir, onSort, onEdit, onDelete, o
                     {item.category && (
                       <Badge variant="outline" className="shrink-0 text-[10px] hidden sm:inline-flex">{item.category}</Badge>
                     )}
+                    {item.is_sensitive && <Badge variant="secondary" className="text-[10px]">Sensitive</Badge>}
+                    {item.pending_latest_chapter && <Badge variant="warning" className="text-[10px]">Review {item.pending_latest_chapter}</Badge>}
+                    {(item.last_outcome === 'FAILED' || item.last_outcome === 'BLOCKED') && <Badge variant="destructive" className="text-[10px]">Check issue</Badge>}
                   </div>
                   <a
                     href={item.toc_url ?? item.original_url}

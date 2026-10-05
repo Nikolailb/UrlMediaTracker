@@ -60,7 +60,9 @@ export function ItemActions({ item, onEdit, onDelete, onHistory }: ItemActionsPr
   function handleCheck() {
     checkItem.mutate(item.id, {
       onSuccess: (data) => {
-        if (data.new_latest_chapter) {
+        if (data.outcome === 'PENDING') {
+          toast.warning(`Chapter ${data.pending_chapter} needs review in Edit.`)
+        } else if (data.new_latest_chapter) {
           toast.success(`New chapter found: ${data.new_latest_chapter}`)
         } else if (data.success) {
           toast.info('Already up to date.')
