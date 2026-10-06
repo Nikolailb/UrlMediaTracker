@@ -1,6 +1,6 @@
 # Pi browser option (REQ-015)
 
-This optional service is enabled on the KeiHub Pi only for `freewebnovel.com`.
+This optional service is initially enabled on the KeiHub Pi for `freewebnovel.com`.
 The tracker first makes one guarded direct request. Its FreeWebNovel site adapter
 uses FlareSolverr only after a challenge, connection failure, or timeout. The
 generic ToC checker can use the same transport only for a separately allowlisted
@@ -38,6 +38,19 @@ only one browser request at a time. Do not expand the allowlist or add parallel
 browser workers without another resource check. The upstream FlareSolverr
 project warns that each browser request launches Chromium and uses substantial
 memory.
+
+## Comix rendered chapter rows (REQ-016)
+
+The Comix adapter reads latest and first chapter links from the directly
+reachable series metadata. A preferred group's link needs rendered chapter
+rows. A bounded Pi browser request returned HTTP 200 with 20 chapter rows and
+20 group links; afterward about 3 GiB RAM was available and swap remained
+unused. After the REQ-016 image passes CI and deploys, run a fresh verified
+backup, copy `allow-comix-pi.sh` to the Pi, and run it as root. It changes only
+the exact existing allowlist to `freewebnovel.com,comix.to`, saves the previous
+Compose file under `/srv/keihub/rollback/`, recreates the app, and checks
+health. The direct metadata result remains usable if group lookup fails.
+Restore the saved Compose file and recreate the app to reverse this host change.
 
 ## Roll back
 
