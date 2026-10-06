@@ -290,7 +290,9 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
                 {!preview.url_template && (
                   <div className="flex items-center gap-1.5 text-destructive">
                     <AlertCircle className="h-3.5 w-3.5" />
-                    No chapter URL pattern found. A generic checker needs a chapter URL example to build links; you can still add this for manual tracking.
+                    {preview.strategy_used === 'opaque_id'
+                      ? 'This chapter URL has a separate numeric ID. One example cannot predict future links, so generic probing and the current ToC matcher cannot check it automatically. A site-specific checker is needed.'
+                      : 'No chapter URL pattern found. A generic checker needs a chapter URL example to build links; you can still add this for manual tracking.'}
                   </div>
                 )}
               </div>

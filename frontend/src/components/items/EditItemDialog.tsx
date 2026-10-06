@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { itemsApi } from '@/api/items'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/auth/context'
+import { usePatternDetect } from '@/hooks/usePatternDetect'
 
 interface EditItemDialogProps {
   item: ItemRead | null;
@@ -55,7 +56,7 @@ const STRATEGIES: {
     value: "TOC_THEN_PROBE",
     label: "ToC first, then probe",
     description:
-      "Tries ToC scan first; falls back to sequential probing if it finds nothing.",
+      "Tries the ToC first; probes only when ToC checking is unsupported.",
   },
 ];
 
@@ -63,7 +64,7 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
   const open = item !== null;
   const [tab, setTab] = useState<Tab>("general");
   const [title, setTitle] = useState(item?.title ?? "");
-  const [manualRegex, setManualRegex] = useState(item?.chapter_regex ?? "");
+  const [manualRegex, setManualRegex] = useState(item?.pattern_source === 'MANUAL' ? item.chapter_regex ?? '' : '');
   const [interval, setInterval] = useState(
     String(item?.check_interval_min ?? 60),
   );
@@ -72,6 +73,7 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
   );
   const [isActive, setIsActive] = useState(item?.is_active ?? true);
   const [tocUrl, setTocUrl] = useState(item?.toc_url ?? "");
+  const [chapterExampleUrl, setChapterExampleUrl] = useState("");
   const [category, setCategory] = useState(item?.category ?? "");
   const [checkStrategy, setCheckStrategy] = useState<string>(
     item?.strategy_override ?? "AUTO",
@@ -87,6 +89,7 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
   const { selectedUser } = useAuth()
 
   const update = useUpdateItem();
+  const patternPreview = usePatternDetect();
 
   function handleSubmit() {
     if (!item) return;
@@ -95,6 +98,7 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
         id: item.id,
         data: {
           title: title.trim() || null,
+          chapter_url: chapterExampleUrl.trim() || undefined,
           manual_regex: manualRegex.trim() || null,
           check_interval_min: parseInt(interval) || 60,
           current_chapter: currentChapter.trim() || null,
@@ -283,6 +287,49 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
               </div>
 
               <div className="space-y-1.5">
+                <Label htmlFor="edit-chapter-example">Chapter URL example (optional)</Label>
+                <Input
+                  id="edit-chapter-example"
+                  type="url"
+                  placeholder="https://example.com/series/chapter-63"
+                  value={chapterExampleUrl}
+                  onChange={(e) => {
+                    setChapterExampleUrl(e.target.value);
+                    patternPreview.reset();
+                  }}
+                />
+                <p className="text-[11px] text-muted-foreground leading-snug">
+                  Use a real chapter link when the ToC URL does not reveal a chapter pattern. The example replaces the checking pattern, not your progress or latest chapter.
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={!chapterExampleUrl.trim() || patternPreview.isPending}
+                  onClick={() => patternPreview.mutate({ url: chapterExampleUrl.trim(), manual_regex: manualRegex.trim() || null })}
+                >
+                  Preview pattern
+                </Button>
+                {patternPreview.data && (
+                  <div className="rounded border border-border bg-muted/30 p-2 text-xs space-y-1">
+                    {patternPreview.data.url_template ? (
+                      <p className="break-all">Detected URL template: <span className="font-mono">{patternPreview.data.url_template}</span></p>
+                    ) : (
+                      <p className="text-amber-400">
+                        {patternPreview.data.strategy_used === 'opaque_id'
+                          ? 'This URL has a separate numeric ID before the chapter number. One example cannot predict the next URL; generic URL probing and the current ToC matcher cannot use it. A site-specific checker is needed for automatic updates.'
+                          : 'No reusable chapter URL pattern was found. You can save the item for manual tracking.'}
+                      </p>
+                    )}
+                  </div>
+                )}
+                {patternPreview.isError && <p className="text-xs text-destructive">Could not detect a pattern. Check the URL and regex.</p>}
+                {!chapterExampleUrl && item?.url_template && (
+                  <p className="text-[11px] text-muted-foreground break-all">Saved URL template: <span className="font-mono">{item.url_template}</span></p>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
                 <Label htmlFor="edit-regex">
                   Chapter regex override{" "}
                   <span className="text-muted-foreground font-normal">
@@ -292,14 +339,16 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
                 <Input
                   id="edit-regex"
                   value={manualRegex}
-                  onChange={(e) => setManualRegex(e.target.value)}
+                  onChange={(e) => { setManualRegex(e.target.value); patternPreview.reset(); }}
                   placeholder="chapter-(\d+)"
                   className="font-mono text-xs"
                 />
                 <p className="text-[11px] text-muted-foreground leading-snug">
-                  Overrides the auto-detected URL pattern. Leave blank to keep
-                  the detected pattern.
+                  Overrides detection when you provide a chapter example. Leave blank to detect from that example automatically.
                 </p>
+                {item?.pattern_source === 'AUTO' && item.chapter_regex && !manualRegex && (
+                  <p className="text-[11px] text-muted-foreground break-all">Saved detected regex: <span className="font-mono">{item.chapter_regex}</span></p>
+                )}
               </div>
             </div>
           )}

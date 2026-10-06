@@ -67,6 +67,7 @@ export interface ItemCreate {
 
 export interface ItemUpdate {
   title?: string | null
+  chapter_url?: string | null
   manual_regex?: string | null
   check_interval_min?: number | null
   current_chapter?: string | null

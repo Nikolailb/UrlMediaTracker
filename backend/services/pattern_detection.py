@@ -147,6 +147,18 @@ def _apply_manual_regex(url: str, pattern: str) -> PatternDetectionResult:
         )
 
     g1_start, g1_end = m.span(1)
+    path = urlparse(url).path
+    path_start = url.find(path)
+    match_start = m.start() - path_start
+    if path_start >= 0 and 0 <= match_start < len(path) and _has_separate_numeric_id(path, match_start):
+        return PatternDetectionResult(
+            url_template=None,
+            chapter_regex=pattern,
+            current_chapter=m.group(1),
+            confidence=PatternConfidence.LOW,
+            strategy_used="opaque_id",
+            pattern_source="MANUAL",
+        )
     template = url[:g1_start] + "{n}" + url[g1_end:]
     return PatternDetectionResult(
         url_template=template,
@@ -207,6 +219,18 @@ def _try_keyword_match(url: str, path: str) -> PatternDetectionResult | None:
     sep_pattern = re.escape(sep) if sep else r"[-_.]?"
     chapter_regex = rf"(?i){re.escape(keyword)}{sep_pattern}(\d+(?:\.\d+)?[a-z]?)"
 
+    # A separate, opaque ID in the same slug may change for every chapter.
+    # Replacing only the visible chapter number would then probe the wrong URL.
+    if _has_separate_numeric_id(path, m.start()):
+        return PatternDetectionResult(
+            url_template=None,
+            chapter_regex=chapter_regex,
+            current_chapter=current_chapter,
+            confidence=PatternConfidence.LOW,
+            strategy_used="opaque_id",
+            pattern_source="AUTO",
+        )
+
     # Use the same regex on the full URL to get the exact span of group 1
     url_match = re.search(chapter_regex, url, re.IGNORECASE)
     if not url_match:
@@ -223,6 +247,13 @@ def _try_keyword_match(url: str, path: str) -> PatternDetectionResult | None:
         strategy_used="keyword_match",
         pattern_source="AUTO",
     )
+
+
+def _has_separate_numeric_id(path: str, chapter_keyword_start: int) -> bool:
+    """Flag a long numeric slug component immediately before `chapter-63`."""
+    segment_start = path.rfind("/", 0, chapter_keyword_start) + 1
+    prefix = path[segment_start:chapter_keyword_start]
+    return bool(re.search(r"(?:^|[-_.])\d{5,}[-_.]$", prefix))
 
 
 def _try_trailing_number(url: str, path: str) -> PatternDetectionResult | None:

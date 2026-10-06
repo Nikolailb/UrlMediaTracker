@@ -126,8 +126,27 @@ def update_item(item_id: str, payload: ItemUpdate, db: DbDep, identity: Identity
     if data.get("is_sensitive") and identity.session.safe_view_enabled:
         raise HTTPException(status.HTTP_409_CONFLICT, "Reveal sensitive entries before marking one sensitive.")
     manual_regex = data.pop("manual_regex", None)
-    if manual_regex:
-        detection = detect_pattern(item.original_url, manual_regex)
+    chapter_example = data.pop("chapter_url", None)
+    if chapter_example:
+        # REQ-004: editing a ToC-first item can replace its chapter-link
+        # pattern without treating the example number as reading progress.
+        try:
+            detection = detect_pattern(chapter_example, manual_regex)
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+        item.url_template = detection.url_template
+        item.chapter_regex = detection.chapter_regex
+        item.pattern_source = detection.pattern_source
+    elif manual_regex:
+        example = (item.url_template.replace("{n}", item.latest_chapter or item.current_chapter or "1")
+                   if item.url_template else item.original_url)
+        try:
+            detection = detect_pattern(example, manual_regex)
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+        if not detection.url_template:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                "Regex did not produce a reusable link. Provide a chapter URL example.")
         item.url_template = detection.url_template
         item.chapter_regex = detection.chapter_regex
         item.pattern_source = detection.pattern_source

@@ -40,6 +40,7 @@ class ItemCreate(BaseModel):
 
 class ItemUpdate(BaseModel):
     title: str | None = None
+    chapter_url: str | None = None
     manual_regex: str | None = Field(
         default=None,
         validation_alias=AliasChoices("manual_regex", "custom_regex"),
@@ -55,7 +56,7 @@ class ItemUpdate(BaseModel):
     latest_chapter: str | None = None
     strategy_override: Literal["FREEWEBNOVEL", "TOC_SCRAPER", "INCREMENTAL_PROBE", "TOC_THEN_PROBE"] | None = None
 
-    @field_validator("toc_url")
+    @field_validator("toc_url", "chapter_url")
     @classmethod
     def web_url(cls, value: str | None) -> str | None:
         return ItemCreate.web_url(value)

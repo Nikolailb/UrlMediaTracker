@@ -52,6 +52,19 @@ def test_toc_first_add_uses_chapter_example_without_inferred_progress(monkeypatc
         assert item["current_chapter"] is None
         assert item["latest_chapter"] is None
 
+        edited = client.patch(f"/items/{item['id']}", json={
+            "chapter_url": "https://hentai20.io/i-became-a-pornhwa-npc-chapter-60/",
+            "toc_url": toc,
+        }, headers=headers)
+        assert edited.status_code == 200, edited.text
+        assert edited.json()["url_template"] == "https://hentai20.io/i-became-a-pornhwa-npc-chapter-{n}/"
+        assert edited.json()["toc_url"] == toc
+        assert edited.json()["current_chapter"] is None
+        assert edited.json()["latest_chapter"] is None
+
+        invalid_edit = client.patch(f"/items/{item['id']}", json={"chapter_url": "file:///etc/passwd"}, headers=headers)
+        assert invalid_edit.status_code == 422
+
         custom_toc = "https://hentai20.io/i-became-a-pornhwa-npc/chapters/"
         other = client.post("/items", json={
             "url": toc, "chapter_url": chapter, "toc_url": custom_toc,
