@@ -1,0 +1,37 @@
+name: tracker-browser
+
+# REQ-015: FlareSolverr has no direct external route. The dual-homed egress
+# service is its only path to public web hosts and publishes its API on the
+# Pi loopback interface only. Image digests were verified on ARM64.
+services:
+  egress:
+    image: python:3.12-alpine@sha256:1b668429b3511ab407d8e00648891631b0b1a4d7e15e3ca70f38ab5b91ad4ab4
+    command: ["python", "-u", "/app/public_egress_proxy.py"]
+    volumes:
+      - /srv/keihub/sources/tracker-browser/public_egress_proxy.py:/app/public_egress_proxy.py:ro
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 128m
+    pids_limit: 64
+    ports:
+      - "127.0.0.1:8191:8191"
+    networks: [browser_private, default]
+    restart: unless-stopped
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr@sha256:c80ae007ce2ccdcd217a12426e4f039ef763ff90738c808d38810c3e59323767
+    depends_on: [egress]
+    environment:
+      PROXY_URL: http://egress:8118
+      LOG_LEVEL: info
+      DISABLE_MEDIA: "true"
+    shm_size: 256m
+    mem_limit: 1024m
+    pids_limit: 256
+    networks: [browser_private]
+    restart: unless-stopped
+
+networks:
+  browser_private:
+    internal: true
