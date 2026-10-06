@@ -1,4 +1,3 @@
-import { ExternalLink } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { ItemProgress } from './ItemProgress'
 import { ItemActions } from './ItemActions'
@@ -36,15 +35,6 @@ export function ItemCards({ items, onEdit, onDelete, onHistory }: ItemCardsProps
                   <span className="h-2 w-2 shrink-0 rounded-full bg-primary animate-pulse" />
                 )}
               </div>
-              <a
-                href={item.toc_url ?? item.original_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 mt-0.5 text-xs text-muted-foreground hover:text-primary truncate"
-              >
-                <ExternalLink className="h-3 w-3 shrink-0" />
-                <span className="truncate">{item.toc_url ?? item.original_url}</span>
-              </a>
             </div>
             <ItemActions item={item} onEdit={() => onEdit(item)} onDelete={() => onDelete(item)} onHistory={() => onHistory(item)} />
           </div>

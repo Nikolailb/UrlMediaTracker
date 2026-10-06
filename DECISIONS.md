@@ -37,3 +37,21 @@ Desktop presets use wrapping chips; phones open a compact preset picker. The Fil
 
 ## D-012 — Centered wide-screen content (2026-10-06)
 Cap the reading queue's main content at 96 rem and center it on wider screens. Keep the header full width. The previous 110 rem limit spread table columns too far apart at 1920 px; a narrower limit still leaves room for the table and wrapping presets. REQ-009.
+
+## D-013 — Explicit browser transport for selected ToC checkers (2026-10-06)
+Keep direct requests as the default. Permit an optional FlareSolverr retry after a challenge or direct connection/timeout failure only for an explicitly allowlisted site's adapter or generic ToC checker. Never use it for incremental URL probing or the general site diagnostic; probing makes many requests and can increase blocking. FreeWebNovel uses a custom series-page ToC parser based on the latest metadata, latest list, and total count. Split it, generic ToC parsing, and URL probing into separate files. An always-on browser proxy and a universal Cloudflare bypass were considered, but add Pi cost and cannot guarantee access. The browser service must have public-only egress because it can follow redirects and load subresources before application-side validation. REQ-005, REQ-007, REQ-015. This supersedes D-005's earlier decision against any browser-backed option; manual tracking remains available.
+
+## D-014 — Checker package layout (2026-10-06)
+Place all chapter checking under `services/checking/`, with site adapters in `sites/`, generic methods in `strategies/`, and shared selection, orchestration, and transports at the package root. This keeps adding a tenth site adapter from crowding general services and keeps cover handling separate. A flat collection of checker files was considered and rejected for maintainability. REQ-005, REQ-015.
+
+## D-015 — Guarded local browser preview (2026-10-06)
+For local development, put FlareSolverr on an internal Docker network and route its browser through a small proxy that rejects private DNS results and pins connections to the validated public address. Publish only a loopback API gateway to the dev backend. A plain FlareSolverr container with unrestricted egress was considered for ease of setup but cannot enforce the public-only boundary required by REQ-015. This arrangement was verified locally; Pi deployment remains a separate decision after resource and operations checks. REQ-015.
+
+## D-016 — URL then editable source review (2026-10-06)
+Keep two short add steps: paste a URL, then review the source and personal fields. The source check can take time, so a separate review step makes the detected method and values clear. Copy detected details only when the user chooses **Use detected details**; keep latest chapter separate from personal reading position. Put regex and generic ToC fields in advanced options because a dedicated site checker does not require a chapter URL pattern. Remove the duplicate URL line beneath linked titles in table and card views. A one-screen form and automatic overwrite of inferred values were considered; the two-step review makes source results easier to verify without making advanced settings part of the default path. REQ-004, REQ-011.
+
+## D-017 — Chapter 1 for unstarted items (2026-10-06)
+Treat empty progress as not started when a numeric latest chapter and reliable chapter URL template exist. Show a chapter 1 start link, let Open next target chapter 1, and let Mark read save chapter 1. The display alone never changes the stored progress. Requiring the user to enter chapter 0 before reading was considered but adds avoidable setup for series URLs. REQ-011, REQ-013.
+
+## D-018 — Separate ToC source and chapter example (2026-10-06)
+Allow a ToC or series URL in the first add step and a chapter URL example in advanced review options. Derive the chapter template from the example, default the ToC to the first URL, and never interpret the example's chapter number as reading progress or latest. Provide the same explicit strategy override available when editing. Requiring a chapter URL as the first input would make the source URL awkward for ToC-first sites; storing the example URL separately is unnecessary once its template is derived. REQ-004, REQ-005.

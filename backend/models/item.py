@@ -64,7 +64,7 @@ class TrackedItem(Base):
     current_chapter: Mapped[str | None] = mapped_column(String(50), nullable=True)
     latest_chapter: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
-    # Optional table-of-contents URL used by ToCScraperStrategy
+    # Optional table-of-contents URL used by the generic ToC checker
     toc_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
 
     # Content category tag (free-text enum stored as String for forward compatibility)

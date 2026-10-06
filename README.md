@@ -14,7 +14,26 @@ A self-hosted reading queue for serialized novels, comics, manga, and webtoons. 
 
 Use Python 3.12 and Node.js 24. Create `backend/env`, install `backend/requirements.txt` and `pytest`, then run `alembic upgrade head` from `backend`. Run `python -m admin_bootstrap` from `backend` to set the first admin password; existing entries are assigned to that account. Run `npm ci` at the root and in `frontend`. `npm run dev` starts Uvicorn at `http://localhost:8000` and Vite at `http://localhost:5173`; API docs are at `/docs`. Copy `backend/.env.example` to `backend/.env` as needed. Run backend tests from `backend` with `python -m pytest tests`; run `npm --prefix frontend run build` and `npm --prefix frontend run lint`.
 
-Sign in to your own reading queue. An admin can create expiring invite links and select a member's library. Safe view starts on for each sign-in; reveal sensitive entries deliberately before editing them. Add a series or chapter URL to inspect the checking method and site access before saving. Switch between table and cover cards. Select Images, Words, or Unread from wrapping desktop chips or the phone preset modal; open Filters to adjust the queue and save its full filter and sort state as a personal preset. Edit covers by upload or public image URL. Titles open the ToC or series; available chapter links and the next chapter action open reading pages. ZIP export requires password confirmation and includes sensitive entries and covers; import deduplicates within the selected account. Legacy JSON import/export remains available.
+Sign in to your own reading queue. An admin can create expiring invite links and select a member's library. Safe view starts on for each sign-in; reveal sensitive entries deliberately before editing them. Add a series or chapter URL, review the checking method and site access, and use detected details to fill editable fields if they look right. A chapter URL example, regex, generic ToC URL, and strategy override are under advanced checking options; an example chapter number is not treated as reading progress. Switch between table and cover cards. Select Images, Words, or Unread from wrapping desktop chips or the phone preset modal; open Filters to adjust the queue and save its full filter and sort state as a personal preset. Edit covers by upload or public image URL. Titles open the ToC or series; available chapter links and the next chapter action open reading pages. ZIP export requires password confirmation and includes sensitive entries and covers; import deduplicates within the selected account. Legacy JSON import/export remains available.
+
+Chapter checking lives under `backend/services/checking/`, with one adapter module per site in `sites/` and generic methods in `strategies/`. It tries a matching site adapter first, then a generic ToC or URL method. FreeWebNovel's adapter reads the requested series page's latest chapter signals rather than the paginated first page of chapter links. A Cloudflare challenge is reported as blocked by default. Optional FlareSolverr use requires both `FLARESOLVERR_URL` and a comma-separated `FLARESOLVERR_ALLOWED_HOSTS` value (for example `freewebnovel.com`). Only site and ToC checkers may use it after a direct challenge or connection/timeout failure; the site test and incremental URL probe never do. Keep the FlareSolverr endpoint private and its browser container restricted to public-only network egress before enabling it. The guarded local dev setup has fetched live FreeWebNovel pages and been checked in the Add preview and item-check UI; it has not been deployed to the Pi.
+
+### Local FreeWebNovel preview (REQ-015)
+
+With Docker Desktop running, start the optional browser service from the repository root:
+
+```powershell
+docker compose -f compose.flaresolverr.dev.yml up -d
+```
+
+The Compose file binds its API to `127.0.0.1:8191` only. FlareSolverr has no direct external network route; its HTTP proxy accepts only public DNS destinations and pins connections to a validated address. Set these variables **for the dev backend process only**, then restart that backend:
+
+```powershell
+$env:FLARESOLVERR_URL = 'http://127.0.0.1:8191'
+$env:FLARESOLVERR_ALLOWED_HOSTS = 'freewebnovel.com'
+```
+
+At the current dev preview (`http://127.0.0.1:15173/`), use **Add** with a FreeWebNovel series URL. The preview should show `REACHABLE VIA BROWSER`, method `FREEWEBNOVEL`, and a detected latest chapter. An existing item can use **Check for updates**; a large increase is held as **Review** until accepted. **Test site** intentionally makes a direct request and may still report a Cloudflare HTTP 403. Docker Desktop must remain running for browser checks. Stop this local option with `docker compose -f compose.flaresolverr.dev.yml down`. The Pi configuration is separate and unchanged.
 
 ## Raspberry Pi
 

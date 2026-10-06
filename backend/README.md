@@ -107,11 +107,10 @@ the DB with `create_all` before adopting Alembic):
 .\env\Scripts\alembic stamp head
 ```
 
-> On first startup the app also calls `Base.metadata.create_all` as a fallback
-> so the server can boot without running migrations manually. In production,
-> running `alembic upgrade head` explicitly before starting the server is
-> recommended — it ensures all schema changes are applied in the correct order
-> and lets you catch migration errors before traffic starts.
+Run `alembic upgrade head` before starting the server. The app does not create or
+alter schema automatically at startup. Do not use `create_all` to upgrade an
+existing library. See root `README.md` for the guarded local FlareSolverr
+preview (REQ-015).
 
 ## API overview
 
@@ -143,14 +142,18 @@ backend/
   routers/              # FastAPI routers (items, users, patterns)
   services/
     pattern_detection.py  # URL pattern detection (3-strategy cascade)
-    chapter_checker.py    # HTTP probing strategy + ABC for extensibility
+    checking/
+      orchestrator.py     # check persistence
+      selector.py         # strategy selection
+      http.py             # guarded direct fetch and diagnostics
+      browser.py          # optional allowlisted FlareSolverr transport
+      sites/freewebnovel.py  # series-page ToC adapter
+      strategies/toc.py  # generic ToC parser
+      strategies/probe.py  # incremental URL probing
     scheduler.py          # APScheduler background checks
   alembic/              # Database migrations
 ```
 
 ## Adding a new check strategy
 
-1. Create a class that inherits `BaseCheckStrategy` in `services/chapter_checker.py`
-2. Implement `find_latest_chapter(current_latest, url_template, config) -> str | None`
-3. Register it in `STRATEGY_REGISTRY` with a string key
-4. Add the key as a value to the `CheckStrategy` enum in `models/item.py` and generate a migration
+Add a site adapter in its own `services/checking/sites/<site>.py` file and select it in `checking/selector.py`. A generic ToC rule belongs in `checking/strategies/toc.py`; URL probing belongs in `checking/strategies/probe.py`. Return a typed `CheckResult`, with `UNCHANGED` or `BLOCKED` terminal, and add a fixture for the site's own chapter links plus unrelated links. Only site and ToC checkers may opt into `checking/browser.py` after a direct challenge or connection/timeout failure; never call it from incremental probing or diagnostics. Any browser service needs private access and public-only egress before host activation. See REQ-005, REQ-007, and REQ-015.

@@ -22,7 +22,7 @@ async def run_due_checks() -> None:
     # Deferred imports prevent circular deps and ensure the app is fully initialised
     from database import SessionLocal  # noqa: PLC0415
     from models.item import TrackedItem  # noqa: PLC0415
-    from services.chapter_checker import check_item  # noqa: PLC0415
+    from services.checking.orchestrator import check_item  # noqa: PLC0415
 
     db = SessionLocal()
     try:

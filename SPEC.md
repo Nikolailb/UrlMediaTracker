@@ -22,12 +22,12 @@ Acceptance: title, URL, note, cover, and counts cannot leak through normal APIs 
 ## Source checking
 
 ### REQ-004 — Add from series or chapter URL
-Preview inferred title, current chapter, cover candidate, accessibility, and checker before saving. Let the user edit the inference. An inaccessible source can be saved for manual tracking.
+Preview inferred title, chapter, cover candidate, accessibility, and checker before saving. The first add step accepts only a series or chapter URL; the review step offers an explicit action to copy detected title, URL chapter, latest chapter, and cover into editable fields. The user's reading position stays separate from the source's latest chapter. Advanced review options accept an optional chapter URL example, optional separate ToC URL, chapter regex, and strategy override. When a chapter example is supplied, build the URL template from it and use the first URL as the ToC unless a different ToC is supplied. The chapter number in that example is never inferred as reading progress or latest chapter. A recognized site-specific series URL needs no URL pattern and must not show a missing-pattern warning. An inaccessible source can be saved for manual tracking.
 
-Acceptance: both URL forms create entries; inaccessible source warns without blocking; private-network fetch targets are rejected, including redirected targets.
+Acceptance: both URL forms create entries; a ToC-first entry with a chapter-55 example stores the first URL as ToC and a chapter template from the example, with empty progress/latest unless explicitly entered; detection does not silently overwrite edited fields; saved latest chapter matches the review field; the first step asks for no regex; a FreeWebNovel series URL displays no missing-pattern warning; inaccessible source warns without blocking; private-network fetch targets are rejected, including redirected targets.
 
 ### REQ-005 — Checker selection and outcomes
-Prefer a matching site-specific checker, then a compatible generic ToC or URL checker. Permit item-level override and display the method. Return distinct new, unchanged, unsupported, blocked, and failed outcomes. Unchanged or blocked never triggers a generic probe.
+Prefer a matching site-specific checker, then a compatible generic ToC or URL checker. Permit item-level override during addition and editing, and display the method. Return distinct new, unchanged, unsupported, blocked, and failed outcomes. Unchanged or blocked never triggers a generic probe.
 
 Acceptance: fixture tests cover each outcome and override; unchanged ToC and unrelated links never advance the chapter.
 
@@ -39,7 +39,7 @@ Acceptance: challenge and error fixtures differ; rejected private URLs produce n
 ### REQ-007 — FreeWebNovel checker
 Recognize series and chapter links and extract the requested series's chapter number and usable chapter URL, excluding recommendations and global post IDs.
 
-Acceptance: a saved fixture for the supplied Harem System series reports Chapter 644, not 5682, and a corresponding series chapter URL.
+Acceptance: a saved fixture for the supplied Harem System series reports Chapter 644, not 5682, and a corresponding series chapter URL. Series-page fixtures for As A Mafia Boss (546) and My Taboo Harem (1314) read the page-scoped latest metadata and latest-chapters section, not the paginated first 40 or sidebar. Conflicting page signals fail the check rather than advancing progress.
 
 ### REQ-008 — Suspicious increases
 An automatic numeric increase greater than both 50 chapters and 25% of the prior latest becomes a pending result for owner review. Incomparable chapter labels also require review. The owner can accept or correct it.
@@ -59,9 +59,9 @@ Support an optional short note and one locally stored cover. Try safe metadata f
 Acceptance: validate type, size, and decoded image for both upload and URL fetch; reject private-network targets and recheck redirects; cover API enforces authorization and safe view; backups and exports include covers.
 
 ### REQ-011 — Mobile reading
-Make open-next and mark-read prominent touch actions on phones and visible in the table. Link item titles to the ToC or series URL. Link progress chapter numbers to their specific chapter URL when a reliable template is known. Search, filters, view choice, and editing remain usable without horizontal overflow.
+Make open-next and mark-read prominent touch actions on phones and visible in the table. Link item titles to the ToC or series URL without a duplicate URL line below the title in either queue view. Link progress chapter numbers to their specific chapter URL when a reliable template is known. When latest is at least chapter 1 and progress is empty or zero, display a chapter 1 start link in the progress position; Open next targets chapter 1 and Mark read records chapter 1. Displaying the start link does not itself save progress. Search, filters, view choice, and editing remain usable without horizontal overflow.
 
-Acceptance: core actions work at 360 px width with touch and keyboard access; title and known chapter links open the intended destination. Chapter numbers are plain foreground text until hovered, when they match title links' blue and underline styling. Unavailable chapter links have clear feedback.
+Acceptance: core actions work at 360 px width with touch and keyboard access; title and known chapter links open the intended destination. A new FreeWebNovel item with latest 1416 and no progress shows linked `1 / 1416`, reports unread, opens chapter 1, and records progress only after Mark read. Chapter numbers are plain foreground text until hovered, when they match title links' blue and underline styling. Unavailable chapter links have clear feedback.
 
 ### REQ-012 — Portable account archive
 An explicit password-confirmed full export produces a versioned ZIP containing entries, progress, notes, sensitive entries, covers, and custom filter presets. Import targets the selected authorized account and deduplicates normalized URLs and preset names within it. Support legacy JSON import where safe. Operational backup is separate.
@@ -77,3 +77,8 @@ Acceptance: each state is distinct and pending results have an action.
 Keep SQLite, the separate tracker service, Caddy, LAN/VPN access, and KeiHub's CI-gated update and encrypted restic backup. Persist database and covers together. Require verified backup before migration and paired image/data rollback on failure.
 
 Acceptance: restore rehearsal recovers entries/covers; existing record count and sample rows survive migration; isolated failed-readiness test restores the paired version; no added database or mandatory cloud service.
+
+### REQ-015 — Opt-in browser fetching and checker modules
+Keep checking code under `services/checking/`: one module per site adapter in `sites/`, generic methods in `strategies/`, and separate selection, orchestration, public HTTP, and browser transport modules. An optional FlareSolverr transport may be called only by a site-specific or ToC checker, only after a direct browser challenge, connection failure, or timeout, and only for an explicitly configured host. The URL probe and general site-access diagnostic never call it. If the browser service is absent or fails, preserve a blocked result. Do not enable this transport on a host until its browser container has public-only network egress and is inaccessible from the internet or LAN users.
+
+Acceptance: both configuration values are empty by default; tests show blocked or unreachable sources keep their direct outcome by default, site/ToC can opt in, and probe/diagnostic paths do not invoke the browser service. Local parser tests do not imply live Cloudflare access or Pi readiness.

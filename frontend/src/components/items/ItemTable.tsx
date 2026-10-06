@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ArrowUpDown, ExternalLink } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { ItemProgress } from './ItemProgress'
@@ -109,15 +109,6 @@ export function ItemTable({ items, sortKey, sortDir, onSort, onEdit, onDelete, o
                     {item.pending_latest_chapter && <Badge variant="warning" className="text-[10px]">Review {item.pending_latest_chapter}</Badge>}
                     {(item.last_outcome === 'FAILED' || item.last_outcome === 'BLOCKED') && <Badge variant="destructive" className="text-[10px]">Check issue</Badge>}
                   </div>
-                  <a
-                    href={item.toc_url ?? item.original_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary truncate max-w-[200px] sm:max-w-xs"
-                  >
-                    <ExternalLink className="h-3 w-3 shrink-0" />
-                    <span className="truncate">{item.toc_url ?? item.original_url}</span>
-                  </a>
                   {/* Progress inline on small screens */}
                   <div className="md:hidden mt-1">
                     <ItemProgress item={item} />

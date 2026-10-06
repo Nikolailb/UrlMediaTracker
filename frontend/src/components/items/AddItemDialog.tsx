@@ -35,6 +35,8 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
   const [step, setStep] = useState<1 | 2>(1)
   const [url, setUrl] = useState('')
   const [manualRegex, setManualRegex] = useState('')
+  const [chapterExampleUrl, setChapterExampleUrl] = useState('')
+  const [strategyOverride, setStrategyOverride] = useState('AUTO')
   const [title, setTitle] = useState('')
   const [interval, setInterval] = useState('60')
   const [tocUrl, setTocUrl] = useState('')
@@ -42,9 +44,11 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
   const [preview, setPreview] = useState<PatternDetectionResult | null>(null)
   const [sourcePreview, setSourcePreview] = useState<SourcePreview | null>(null)
   const [previewPending, setPreviewPending] = useState(false)
+  const [previewError, setPreviewError] = useState(false)
   const [note, setNote] = useState('')
   const [sensitive, setSensitive] = useState(false)
   const [currentChapter, setCurrentChapter] = useState('')
+  const [latestChapter, setLatestChapter] = useState('')
   const [coverUrl, setCoverUrl] = useState('')
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -58,62 +62,77 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
       setStep(1)
       setUrl('')
       setManualRegex('')
+      setChapterExampleUrl('')
+      setStrategyOverride('AUTO')
       setTitle('')
       setInterval('60')
       setTocUrl('')
       setCategory('')
       setPreview(null)
       setSourcePreview(null)
+      setPreviewError(false)
       setNote('')
       setSensitive(false)
       setCurrentChapter('')
+      setLatestChapter('')
       setCoverUrl('')
     }
   }, [open])
 
-  // Debounced pattern preview
+  // REQ-004: chapter pattern detection is advisory, never a series-URL gate.
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
-    if (!url.trim()) { setPreview(null); return }
+    if (!url.trim() || step !== 2) { setPreview(null); return }
     debounceRef.current = setTimeout(() => {
       detect.mutate(
-        { url: url.trim(), manual_regex: manualRegex.trim() || null },
+        { url: chapterExampleUrl.trim() || url.trim(), manual_regex: manualRegex.trim() || null },
         { onSuccess: setPreview, onError: () => setPreview(null) },
       )
     }, 400)
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url, manualRegex])
+  }, [url, chapterExampleUrl, manualRegex, step])
 
   async function handleNext() {
     if (!url.trim()) return
+    setSourcePreview(null)
+    setPreviewError(false)
     setStep(2)
     setPreviewPending(true)
     try {
       const result = await post<SourcePreview>('/tools/preview', { url: url.trim() })
       setSourcePreview(result)
-      if (!title && result.title) setTitle(result.title)
-      if (!currentChapter && result.current_chapter) setCurrentChapter(result.current_chapter)
     } catch {
       setSourcePreview(null)
+      setPreviewError(true)
     } finally {
       setPreviewPending(false)
     }
+  }
+
+  function useDetectedDetails() {
+    if (!sourcePreview) return
+    if (sourcePreview.title) setTitle(sourcePreview.title)
+    if (sourcePreview.current_chapter) setCurrentChapter(sourcePreview.current_chapter)
+    if (sourcePreview.latest_chapter) setLatestChapter(sourcePreview.latest_chapter)
+    if (sourcePreview.cover_url) setCoverUrl(sourcePreview.cover_url)
   }
 
   function handleSubmit() {
     create.mutate(
       {
         url: url.trim(),
+        chapter_url: chapterExampleUrl.trim() || null,
         title: title.trim() || null,
         manual_regex: manualRegex.trim() || null,
+        strategy_override: strategyOverride === 'AUTO' ? null : strategyOverride,
         check_interval_min: parseInt(interval) || 60,
-        toc_url: tocUrl.trim() || null,
+        toc_url: tocUrl.trim() || (chapterExampleUrl.trim() ? url.trim() : null),
         category: category || null,
         note: note.trim() || null,
         is_sensitive: sensitive,
         current_chapter: currentChapter.trim() || null,
-        latest_chapter: sourcePreview?.latest_chapter || preview?.current_chapter || null,
+        latest_chapter: latestChapter.trim() || null,
       },
       {
         onSuccess: async (created) => {
@@ -140,48 +159,105 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
           <DialogTitle>{step === 1 ? 'Add tracked item' : 'Confirm details'}</DialogTitle>
           <DialogDescription>
             {step === 1
-              ? 'Paste a series or chapter URL. We will preview what can be detected.'
-              : 'Review the detected pattern and optionally add a title.'}
+              ? 'Paste a series or chapter URL. We will check the source before you save it.'
+              : 'Review the source, use detected details if they look right, then set your reading position.'}
           </DialogDescription>
         </DialogHeader>
 
         {step === 1 && (
           <div className="space-y-4">
-            {/* URL input */}
             <div className="space-y-1.5">
               <Label htmlFor="url">URL</Label>
               <Input
                 id="url"
-                placeholder="https://example.com/novel/chapter-183"
+                placeholder="https://example.com/novel/my-series"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 autoFocus
               />
             </div>
+          </div>
+        )}
 
-            {/* Manual regex */}
+        {step === 2 && (
+          <div className="space-y-4">
+            {previewPending && <p className="text-sm text-muted-foreground">Checking source…</p>}
+            {previewError && <p className="text-sm text-amber-600">The source preview could not be completed. You can still enter details and track it manually.</p>}
+            {sourcePreview && <div className="rounded-lg border p-3 text-xs space-y-2">
+              <p>Source: <strong>{sourcePreview.access.state.replaceAll('_', ' ')}</strong>{sourcePreview.access.status_code ? ` (HTTP ${sourcePreview.access.status_code})` : ''}</p>
+              <p>Suggested checker: <strong>{sourcePreview.checker}</strong></p>
+              {sourcePreview.title && <p>Title found: {sourcePreview.title}</p>}
+              {sourcePreview.latest_chapter && <p>Latest found: chapter {sourcePreview.latest_chapter}</p>}
+              {sourcePreview.current_chapter && <p>Chapter in URL: {sourcePreview.current_chapter}</p>}
+              {sourcePreview.cover_url && <img src={sourcePreview.cover_url} alt="Detected cover preview" className="h-20 max-w-20 object-cover rounded" />}
+              {(sourcePreview.title || sourcePreview.latest_chapter || sourcePreview.current_chapter || sourcePreview.cover_url) &&
+                <Button type="button" size="sm" variant="outline" onClick={useDetectedDetails}>Use detected details</Button>}
+              {!['REACHABLE', 'REACHABLE_VIA_BROWSER'].includes(sourcePreview.access.state) && <p className="text-amber-600">Automatic checking may fail. You can still track this manually.</p>}
+            </div>}
             <div className="space-y-1.5">
-              <Label htmlFor="regex">
-                Custom regex{' '}
-                <span className="text-muted-foreground font-normal">(optional · one capture group)</span>
-              </Label>
-              <Input
-                id="regex"
-                placeholder="chapter-(\d+)"
-                value={manualRegex}
-                onChange={(e) => setManualRegex(e.target.value)}
-                className="font-mono text-xs"
-              />
+              <Label htmlFor="title">Title <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Input id="title" placeholder="Series title" value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
             </div>
+            <div className="space-y-1.5"><Label htmlFor="add-current">Your current chapter</Label><Input id="add-current" value={currentChapter} onChange={(e) => setCurrentChapter(e.target.value)} placeholder="Leave blank if you have not started" /></div>
+            <div className="space-y-1.5"><Label htmlFor="add-latest">Latest chapter</Label><Input id="add-latest" value={latestChapter} onChange={(e) => setLatestChapter(e.target.value)} placeholder="Optional; use detected details or enter manually" /></div>
+            <div className="space-y-1.5">
+              <Label htmlFor="interval">Check interval (minutes)</Label>
+              <Input id="interval" type="number" min="5" max="10080" value={interval} onChange={(e) => setInterval(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="category">Category <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Select value={category} onValueChange={(v) => setCategory(v === '__none__' ? '' : v)}>
+                <SelectTrigger id="category"><SelectValue placeholder="No category" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">No category</SelectItem>
+                  {ITEM_CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5"><Label htmlFor="add-note">Personal note (optional)</Label><Input id="add-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} /></div>
+            <div className="space-y-1.5"><Label htmlFor="add-cover-url">Cover image URL (optional)</Label><Input id="add-cover-url" type="url" placeholder="https://example.com/cover.jpg" value={coverUrl} onChange={(e) => setCoverUrl(e.target.value)} /></div>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={sensitive} onChange={(e) => setSensitive(e.target.checked)} /> Sensitive entry</label>
 
-            {/* Pattern preview */}
-            {(detect.isPending) && (
+            <details className="rounded-lg border border-border p-3 text-sm">
+              <summary className="cursor-pointer font-medium">Advanced checking options</summary>
+              <div className="space-y-4 pt-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="chapter-example-url">Chapter URL example (optional)</Label>
+                  <Input id="chapter-example-url" type="url" placeholder="https://example.com/my-series-chapter-55/" value={chapterExampleUrl} onChange={(e) => setChapterExampleUrl(e.target.value)} />
+                  <p className="text-xs text-muted-foreground">Use this when the first URL is a series or ToC page. It defines chapter links; chapter 55 here will not be saved as your progress or the latest chapter.</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="toc-url">Table of contents URL (optional)</Label>
+                  <Input id="toc-url" placeholder="https://example.com/series/chapters" value={tocUrl} onChange={(e) => setTocUrl(e.target.value)} />
+                  <p className="text-xs text-muted-foreground">With a chapter URL example, the first URL is used as the ToC by default. Enter a different ToC here only if needed.</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="add-strategy">Checking strategy</Label>
+                  <Select value={strategyOverride} onValueChange={setStrategyOverride}>
+                    <SelectTrigger id="add-strategy"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="AUTO">Automatic (recommended)</SelectItem>
+                      {sourcePreview?.checker === 'FREEWEBNOVEL' && <SelectItem value="FREEWEBNOVEL">FreeWebNovel site checker</SelectItem>}
+                      <SelectItem value="TOC_SCRAPER">Table of contents scan</SelectItem>
+                      <SelectItem value="INCREMENTAL_PROBE">Sequential URL probing</SelectItem>
+                      <SelectItem value="TOC_THEN_PROBE">ToC, then probe if unsupported</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">The ToC options need a ToC URL and chapter-link pattern. Sequential probing sends multiple requests. Automatic prefers a dedicated site checker when available.</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="regex">Chapter URL regex (optional · one capture group)</Label>
+                  <Input id="regex" placeholder="chapter-(\d+)" value={manualRegex} onChange={(e) => setManualRegex(e.target.value)} className="font-mono text-xs" />
+                  <p className="text-xs text-muted-foreground">Use only when the chapter URL pattern needs an override. A series page does not need a regex for a dedicated site checker.</p>
+                </div>
+            {sourcePreview?.checker === 'FREEWEBNOVEL' && strategyOverride === 'AUTO' && <p className="text-xs text-muted-foreground">The FreeWebNovel checker builds chapter links from the series URL. No chapter URL regex is needed.</p>}
+            {(sourcePreview?.checker !== 'FREEWEBNOVEL' || !['AUTO', 'FREEWEBNOVEL'].includes(strategyOverride)) && detect.isPending && (
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 Detecting pattern…
               </div>
             )}
-            {preview && (
+            {(sourcePreview?.checker !== 'FREEWEBNOVEL' || !['AUTO', 'FREEWEBNOVEL'].includes(strategyOverride)) && preview && (
               <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2 text-xs">
                 <div className="flex items-center gap-2 font-medium">
                   <Sparkles className="h-3.5 w-3.5 text-primary" />
@@ -200,7 +276,7 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
                 <div className="flex gap-4">
                   {preview.current_chapter && (
                     <div>
-                      <span className="text-muted-foreground">Starting chapter  </span>
+                      <span className="text-muted-foreground">{chapterExampleUrl.trim() ? 'Example chapter  ' : 'Chapter in URL  '}</span>
                       <span className="font-semibold">{preview.current_chapter}</span>
                     </div>
                   )}
@@ -214,100 +290,13 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
                 {!preview.url_template && (
                   <div className="flex items-center gap-1.5 text-destructive">
                     <AlertCircle className="h-3.5 w-3.5" />
-                    Could not detect a pattern. You can still add the item and override the regex later.
+                    No chapter URL pattern found. A generic checker needs a chapter URL example to build links; you can still add this for manual tracking.
                   </div>
                 )}
               </div>
             )}
-          </div>
-        )}
-
-        {step === 2 && (
-          <div className="space-y-4">
-            {previewPending && <p className="text-sm text-muted-foreground">Checking source…</p>}
-            {sourcePreview && <div className="rounded-lg border p-3 text-xs space-y-1">
-              <p>Source: <strong>{sourcePreview.access.state.replaceAll('_', ' ')}</strong>{sourcePreview.access.status_code ? ` (HTTP ${sourcePreview.access.status_code})` : ''}</p>
-              <p>Checker: <strong>{sourcePreview.checker}</strong></p>
-              {sourcePreview.latest_chapter && <p>Latest found: chapter {sourcePreview.latest_chapter}</p>}
-              {sourcePreview.current_chapter && <p>Current from URL: chapter {sourcePreview.current_chapter}</p>}
-              {sourcePreview.cover_url && <img src={sourcePreview.cover_url} alt="Detected cover preview" className="h-20 max-w-20 object-cover rounded" />}
-              {sourcePreview.access.state !== 'REACHABLE' && <p className="text-amber-600">Automatic checking may fail. You can still track this manually.</p>}
-            </div>}
-            {/* Title */}
-            <div className="space-y-1.5">
-              <Label htmlFor="title">
-                Title <span className="text-muted-foreground font-normal">(optional)</span>
-              </Label>
-              <Input
-                id="title"
-                placeholder={url ? new URL(url).hostname : 'My Novel'}
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                autoFocus
-              />
-            </div>
-
-            {/* Check interval */}
-            <div className="space-y-1.5"><Label htmlFor="add-current">Current chapter</Label><Input id="add-current" value={currentChapter} onChange={(e) => setCurrentChapter(e.target.value)} placeholder="Optional reading position" /></div>
-            <div className="space-y-1.5">
-              <Label htmlFor="interval">Check interval (minutes)</Label>
-              <Input
-                id="interval"
-                type="number"
-                min="5"
-                max="10080"
-                value={interval}
-                onChange={(e) => setInterval(e.target.value)}
-              />
-            </div>
-
-            {/* Table of contents URL */}
-            <div className="space-y-1.5">
-              <Label htmlFor="toc-url">
-                Table of contents URL{' '}
-                <span className="text-muted-foreground font-normal">(optional)</span>
-              </Label>
-              <Input
-                id="toc-url"
-                placeholder="https://example.com/chapters/1207053/"
-                value={tocUrl}
-                onChange={(e) => setTocUrl(e.target.value)}
-              />
-              <p className="text-[11px] text-muted-foreground leading-snug">
-                Use this when the site uses non-sequential chapter IDs. The tracker
-                will scan the ToC page for links instead of probing sequentially.
-              </p>
-            </div>
-
-            {/* Category */}
-            <div className="space-y-1.5">
-              <Label htmlFor="category">
-                Category{' '}
-                <span className="text-muted-foreground font-normal">(optional)</span>
-              </Label>
-              <Select value={category} onValueChange={(v) => setCategory(v === '__none__' ? '' : v)}>
-                <SelectTrigger id="category">
-                  <SelectValue placeholder="No category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">No category</SelectItem>
-                  {ITEM_CATEGORIES.map((c) => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5"><Label htmlFor="add-note">Personal note (optional)</Label><Input id="add-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} /></div>
-            <div className="space-y-1.5"><Label htmlFor="add-cover-url">Cover image URL (optional)</Label><Input id="add-cover-url" type="url" placeholder="https://example.com/cover.jpg" value={coverUrl} onChange={(e) => setCoverUrl(e.target.value)} /></div>
-            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={sensitive} onChange={(e) => setSensitive(e.target.checked)} /> Sensitive entry</label>
-
-            {/* Summary */}
-            {preview?.url_template && (
-              <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs space-y-1 font-mono break-all text-muted-foreground">
-                {preview.url_template}
               </div>
-            )}
+            </details>
           </div>
         )}
 

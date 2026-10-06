@@ -9,6 +9,7 @@ from models.item import PatternSource, CheckStrategy, ItemCategory
 
 class ItemCreate(BaseModel):
     url: str
+    chapter_url: str | None = None
     title: str | None = None
     manual_regex: str | None = Field(
         default=None,
@@ -23,7 +24,7 @@ class ItemCreate(BaseModel):
     current_chapter: str | None = None
     latest_chapter: str | None = None
 
-    @field_validator("url", "toc_url")
+    @field_validator("url", "chapter_url", "toc_url")
     @classmethod
     def web_url(cls, value: str | None) -> str | None:
         if value is not None:

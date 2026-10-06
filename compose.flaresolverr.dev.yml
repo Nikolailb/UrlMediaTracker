@@ -1,0 +1,30 @@
+name: urlmediatracker-flaresolverr-dev
+
+services:
+  egress:
+    image: python:3.12-alpine
+    command: ["python", "-u", "/app/public_egress_proxy.py"]
+    volumes:
+      - ./backend/devtools/public_egress_proxy.py:/app/public_egress_proxy.py:ro
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    ports:
+      - "127.0.0.1:8191:8191"
+    networks: [browser_private, default]
+    restart: unless-stopped
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    depends_on: [egress]
+    environment:
+      PROXY_URL: http://egress:8118
+      LOG_LEVEL: info
+      DISABLE_MEDIA: "true"
+    shm_size: 256m
+    networks: [browser_private]
+    restart: unless-stopped
+
+networks:
+  browser_private:
+    internal: true

@@ -3,11 +3,25 @@ import io
 import os
 import uuid
 import warnings
+from html.parser import HTMLParser
 from pathlib import Path
 
 from config import settings
 
 MAX_UPLOAD = 5_000_000
+
+
+class _CoverMetaParser(HTMLParser):
+    """Read only the image metadata used for optional automatic covers (REQ-010)."""
+    def __init__(self):
+        super().__init__()
+        self.cover: str | None = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "meta":
+            data = dict(attrs)
+            if data.get("property") == "og:image" or data.get("name") == "image":
+                self.cover = data.get("content")
 
 
 def cover_root() -> Path:
@@ -50,13 +64,13 @@ def save_cover(raw: bytes) -> str:
 
 
 async def fetch_cover(source_url: str) -> str | None:
-    from services.site_checker import _PageParser, safe_get
+    from services.checking.http import safe_get
     from urllib.parse import urljoin
     try:
         status, final_url, body, _ = await safe_get(source_url)
         if status >= 400:
             return None
-        parser = _PageParser()
+        parser = _CoverMetaParser()
         parser.feed(body.decode("utf-8", "replace"))
         if not parser.cover:
             return None

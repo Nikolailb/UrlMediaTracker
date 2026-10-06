@@ -1,8 +1,8 @@
 import asyncio
 import re
 
-from services import chapter_checker
-from services.chapter_checker import CheckerConfig, IncrementalProbeStrategy
+from services.checking.strategies import probe as probe_checker
+from services.checking.orchestrator import CheckerConfig, IncrementalProbeStrategy
 from services.pattern_detection import detect_pattern
 
 
@@ -93,10 +93,10 @@ def _run_incremental_probe(
         max_probe_duration_seconds=5.0,
     )
 
-    original_probe = chapter_checker._probe
-    original_sleep = chapter_checker.asyncio.sleep
-    chapter_checker._probe = _fake_probe_factory(latest_available)
-    chapter_checker.asyncio.sleep = _no_sleep
+    original_probe = probe_checker._probe
+    original_sleep = probe_checker.asyncio.sleep
+    probe_checker._probe = _fake_probe_factory(latest_available)
+    probe_checker.asyncio.sleep = _no_sleep
     try:
         latest = asyncio.run(
             strategy.find_latest_chapter(
@@ -106,8 +106,8 @@ def _run_incremental_probe(
             )
         )
     finally:
-        chapter_checker._probe = original_probe
-        chapter_checker.asyncio.sleep = original_sleep
+        probe_checker._probe = original_probe
+        probe_checker.asyncio.sleep = original_sleep
 
     return detection.current_chapter, latest
 
@@ -128,12 +128,12 @@ def _run_incremental_probe_with_fake_client(
         max_probe_duration_seconds=5.0,
     )
 
-    original_client = chapter_checker.httpx.AsyncClient
-    original_sleep = chapter_checker.asyncio.sleep
-    chapter_checker.httpx.AsyncClient = lambda *args, **kwargs: _FakeAsyncClient(
+    original_client = probe_checker.httpx.AsyncClient
+    original_sleep = probe_checker.asyncio.sleep
+    probe_checker.httpx.AsyncClient = lambda *args, **kwargs: _FakeAsyncClient(
         response_factory
     )
-    chapter_checker.asyncio.sleep = _no_sleep
+    probe_checker.asyncio.sleep = _no_sleep
     try:
         latest = asyncio.run(
             strategy.find_latest_chapter(
@@ -143,8 +143,8 @@ def _run_incremental_probe_with_fake_client(
             )
         )
     finally:
-        chapter_checker.httpx.AsyncClient = original_client
-        chapter_checker.asyncio.sleep = original_sleep
+        probe_checker.httpx.AsyncClient = original_client
+        probe_checker.asyncio.sleep = original_sleep
 
     return detection.current_chapter, latest
 

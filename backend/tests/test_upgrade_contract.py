@@ -9,8 +9,8 @@ from models.item import TrackedItem
 from models.user import LoginSession, User
 from routers.items import _visible_query
 from services.auth import Identity
-from services import site_checker
-from services.site_checker import CheckResult, freewebnovel_series_url, parse_freewebnovel
+from services.checking import selector as site_checker, http as source_http
+from services.checking.selector import CheckResult, freewebnovel_series_url, parse_freewebnovel
 import pytest
 import io
 import json
@@ -20,7 +20,7 @@ import sqlite3
 import subprocess
 import sys
 from pathlib import Path
-from services.chapter_checker import CheckerConfig, check_item
+from services.checking.orchestrator import CheckerConfig, check_item
 from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
 from database import get_db
@@ -29,10 +29,13 @@ from services.auth import hash_password
 
 
 EXAMPLE = "https://freewebnovel.com/novel/harem-system-in-a-fantasy-world"
-HTML = '''<h1>Harem System In A fantasy World</h1>
+HTML = '''<meta property="og:title" content="Harem System In A fantasy World">
+<meta property="og:novel:lastest_chapter_name" content="Chapter 644: New">
+<meta property="og:novel:lastest_chapter_url" content="https://freewebnovel.com/novel/harem-system-in-a-fantasy-world/chapter-644">
+<div id="indexListPage" data-total-chapters="644"><div class="m-newest1">
 <a href="/novel/harem-system-in-a-fantasy-world/chapter-644">Chapter 644: New</a>
-<a href="/novel/harem-system-in-a-fantasy-world/chapter-643">Chapter 643</a>
-<a href="/novel/another-story/chapter-5682">Chapter 5682</a>'''
+<a href="/novel/harem-system-in-a-fantasy-world/chapter-643">Chapter 643</a></div>
+<div class="col-slide"><a href="/novel/another-story/chapter-5682">Chapter 5682</a></div></div>'''
 
 
 def test_freewebnovel_is_scoped_to_requested_series():
@@ -64,7 +67,7 @@ def test_unrelated_toc_links_do_not_fall_through_to_probe(monkeypatch):
     async def unexpected_probe(*args, **kwargs):
         raise AssertionError("Generic probe should not run")
     monkeypatch.setattr(site_checker, "safe_get", fake_get)
-    monkeypatch.setattr("services.chapter_checker.IncrementalProbeStrategy.find_latest_chapter", unexpected_probe)
+    monkeypatch.setattr("services.checking.strategies.probe.IncrementalProbeStrategy.find_latest_chapter", unexpected_probe)
     item = SimpleNamespace(series_url=None, original_url="https://example.com/series",
                            strategy_override=None, check_strategy="TOC_THEN_PROBE",
                            toc_url="https://example.com/series",
@@ -75,7 +78,7 @@ def test_unrelated_toc_links_do_not_fall_through_to_probe(monkeypatch):
 
 
 def test_probe_challenge_is_blocked_instead_of_unchanged(monkeypatch):
-    from services import chapter_checker
+    from services.checking.strategies import probe as probe_checker
 
     class Response:
         status_code = 403
@@ -93,7 +96,7 @@ def test_probe_challenge_is_blocked_instead_of_unchanged(monkeypatch):
         async def __aexit__(self, *_args): return False
         def stream(self, *_args): return Response()
 
-    monkeypatch.setattr(chapter_checker.httpx, "AsyncClient", lambda **_kwargs: Client())
+    monkeypatch.setattr(probe_checker.httpx, "AsyncClient", lambda **_kwargs: Client())
     item = SimpleNamespace(series_url=None, original_url="https://example.com/series/chapter-640",
                            strategy_override="INCREMENTAL_PROBE", check_strategy="INCREMENTAL_PROBE",
                            toc_url=None, url_template="https://example.com/series/chapter-{n}",
@@ -105,13 +108,13 @@ def test_probe_challenge_is_blocked_instead_of_unchanged(monkeypatch):
 def test_site_diagnostic_distinguishes_challenge_and_http_error(monkeypatch):
     async def challenge(_url, **_kwargs):
         return 403, "https://example.com/", b"cf-chl checking your browser", {"cf-ray": "fixture"}
-    monkeypatch.setattr(site_checker, "safe_get", challenge)
-    assert asyncio.run(site_checker.diagnose_url("https://example.com"))["state"] == "LIKELY_CLOUDFLARE"
+    monkeypatch.setattr(source_http, "safe_get", challenge)
+    assert asyncio.run(source_http.diagnose_url("https://example.com"))["state"] == "LIKELY_CLOUDFLARE"
 
     async def ordinary_error(_url, **_kwargs):
         return 404, "https://example.com/", b"missing", {}
-    monkeypatch.setattr(site_checker, "safe_get", ordinary_error)
-    assert asyncio.run(site_checker.diagnose_url("https://example.com"))["state"] == "HTTP_ERROR"
+    monkeypatch.setattr(source_http, "safe_get", ordinary_error)
+    assert asyncio.run(source_http.diagnose_url("https://example.com"))["state"] == "HTTP_ERROR"
 
 
 def test_sensitive_and_other_user_items_are_filtered():

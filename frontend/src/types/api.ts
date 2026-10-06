@@ -52,6 +52,7 @@ export interface ItemRead {
 
 export interface ItemCreate {
   url: string
+  chapter_url?: string | null
   title?: string | null
   manual_regex?: string | null
   check_interval_min?: number

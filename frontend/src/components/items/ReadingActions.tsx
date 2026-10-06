@@ -8,7 +8,7 @@ import { toast } from 'sonner'
 export function ReadingActions({ item, compact = false }: { item: ItemRead; compact?: boolean }) {
   const markRead = useMarkRead()
   const [opening, setOpening] = useState(false)
-  const canOpen = Boolean(item.url_template && item.current_chapter && item.has_unread)
+  const canOpen = Boolean(item.url_template?.includes('{n}') && item.has_unread)
 
   async function openNext() {
     // Open synchronously so browsers do not block the tab after the API response.

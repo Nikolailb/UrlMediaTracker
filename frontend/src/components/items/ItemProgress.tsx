@@ -38,6 +38,10 @@ function chapterUrl(
 export function ItemProgress({ item, className }: ItemProgressProps) {
   const current = item.current_chapter;
   const latest = item.latest_chapter;
+  // REQ-011: show a start link without claiming the first chapter was read.
+  const firstUnread = (!current || current === '0') && Boolean(item.url_template?.includes('{n}')) &&
+    latest !== null && Number.isFinite(Number(latest)) && Number(latest) >= 1;
+  const shownCurrent = firstUnread ? '1' : current;
 
   if (!current && !latest) {
     return <span className="text-xs text-muted-foreground">No data</span>;
@@ -52,14 +56,14 @@ export function ItemProgress({ item, className }: ItemProgressProps) {
       ? Math.min(100, Math.round((currentF / latestF) * 100))
       : null;
 
-  const currentHref = chapterUrl(item.url_template, current);
+  const currentHref = chapterUrl(item.url_template, shownCurrent);
   const latestHref = chapterUrl(item.url_template, latest);
 
   return (
     <div className={`space-y-1 ${className ?? ""}`}>
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium tabular-nums">
-          <ChapterLink chapter={current} href={currentHref} />
+          <ChapterLink chapter={shownCurrent} href={currentHref} />
           {" / "}
           <ChapterLink chapter={latest} href={latestHref} />
         </span>

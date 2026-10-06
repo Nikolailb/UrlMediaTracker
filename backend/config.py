@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     HOST: str = "127.0.0.1"
     PORT: int = 8000
     COVER_DIR: str = "./covers"
+    # REQ-015: both must be set explicitly. Keep the service private and give its
+    # container public-only egress before enabling it for any host.
+    FLARESOLVERR_URL: str | None = None
+    FLARESOLVERR_ALLOWED_HOSTS: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

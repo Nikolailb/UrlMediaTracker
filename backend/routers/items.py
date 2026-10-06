@@ -14,9 +14,10 @@ from models.check_log import ChapterCheckLog
 from models.item import CheckStrategy, TrackedItem
 from schemas.item import ItemCreate, ItemRead, ItemUpdate, MarkReadRequest, NextChapterResponse
 from services.auth import Identity, IdentityDep, owner_id
-from services.chapter_checker import MANUAL_CHECK_COOLDOWN_SECONDS, _last_manual_check, check_item
+from services.checking.orchestrator import MANUAL_CHECK_COOLDOWN_SECONDS, _last_manual_check, check_item
 from services.pattern_detection import build_chapter_url, detect_pattern
-from services.site_checker import UnsafeSource, freewebnovel_series_url, freewebnovel_template, safe_get
+from services.checking.http import UnsafeSource, safe_get
+from services.checking.sites.freewebnovel import series_url as freewebnovel_series_url, chapter_template as freewebnovel_template
 from services.covers import cover_path, save_cover, fetch_cover, MAX_UPLOAD
 
 router = APIRouter(prefix="/items", tags=["items"])
@@ -39,8 +40,13 @@ def _get_or_404(item_id: str, db: Session, identity: Identity) -> TrackedItem:
 
 
 def _has_unread(item: TrackedItem) -> bool | None:
-    if item.current_chapter is None or item.latest_chapter is None:
+    if item.latest_chapter is None:
         return None
+    if item.current_chapter is None or not item.current_chapter.strip():
+        try:
+            return float(item.latest_chapter) >= 1
+        except ValueError:
+            return None
     try:
         return float(item.latest_chapter) > float(item.current_chapter)
     except ValueError:
@@ -58,21 +64,26 @@ def _to_read(item: TrackedItem) -> ItemRead:
 
 @router.post("", response_model=ItemRead, status_code=201)
 async def create_item(payload: ItemCreate, db: DbDep, identity: IdentityDep):
-    detection = detect_pattern(payload.url, payload.manual_regex)
+    # REQ-004: a chapter example supplies the link pattern, never reading progress.
+    detection = detect_pattern(payload.chapter_url or payload.url, payload.manual_regex)
     series_url = freewebnovel_series_url(payload.url)
-    template = freewebnovel_template(series_url) if series_url else detection.url_template
+    template = (freewebnovel_template(series_url)
+                if series_url and payload.strategy_override in {None, "FREEWEBNOVEL"}
+                else detection.url_template)
+    toc_url = payload.toc_url or (payload.url if payload.chapter_url else None)
+    inferred_chapter = None if payload.chapter_url else detection.current_chapter
     item = TrackedItem(
         id=str(uuid.uuid4()), user_id=identity.library_user_id,
         title=payload.title, original_url=payload.url, series_url=series_url,
         url_template=template, chapter_regex=detection.chapter_regex,
         pattern_source=detection.pattern_source,
-        current_chapter=payload.current_chapter or detection.current_chapter,
-        latest_chapter=payload.latest_chapter or detection.current_chapter,
+        current_chapter=payload.current_chapter or inferred_chapter,
+        latest_chapter=payload.latest_chapter or inferred_chapter,
         check_interval_min=payload.check_interval_min,
-        toc_url=payload.toc_url, category=payload.category,
+        toc_url=toc_url, category=payload.category,
         note=payload.note, is_sensitive=payload.is_sensitive,
         strategy_override=payload.strategy_override,
-        check_strategy=(CheckStrategy.TOC_THEN_PROBE if payload.toc_url else CheckStrategy.INCREMENTAL_PROBE),
+        check_strategy=(CheckStrategy.TOC_THEN_PROBE if toc_url else CheckStrategy.INCREMENTAL_PROBE),
     )
     if item.is_sensitive and identity.session.safe_view_enabled:
         raise HTTPException(status.HTTP_409_CONFLICT, "Reveal sensitive entries before creating one.")
@@ -218,11 +229,12 @@ def remove_cover(item_id: str, db: DbDep, identity: IdentityDep):
 @router.get("/{item_id}/next", response_model=NextChapterResponse)
 def get_next_chapter(item_id: str, db: DbDep, identity: IdentityDep):
     item = _get_or_404(item_id, db, identity)
-    if not item.current_chapter or not item.url_template:
+    if not item.url_template or "{n}" not in item.url_template:
         return NextChapterResponse(item_id=item_id, next_chapter=None, next_url=None,
-                                   message="Set a current chapter and URL template first.")
+                                   message="A chapter URL pattern is needed to open the next chapter.")
     try:
-        next_num = str(int(float(item.current_chapter)) + 1)
+        # REQ-011: no saved progress starts with chapter 1 without recording a read.
+        next_num = str(int(float(item.current_chapter)) + 1) if item.current_chapter else "1"
         if item.latest_chapter and float(next_num) > float(item.latest_chapter):
             return NextChapterResponse(item_id=item_id, next_chapter=None, next_url=None,
                                        message="You are up to date!")
