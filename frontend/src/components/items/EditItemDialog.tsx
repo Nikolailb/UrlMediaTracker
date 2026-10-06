@@ -27,6 +27,7 @@ import { itemsApi } from '@/api/items'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/auth/context'
 import { usePatternDetect } from '@/hooks/usePatternDetect'
+import { TocExtractionPanel } from './TocExtractionPanel'
 
 interface EditItemDialogProps {
   item: ItemRead | null;
@@ -41,6 +42,7 @@ const STRATEGIES: {
   description: string;
 }[] = [
   { value: 'AUTO', label: 'Automatic', description: 'Prefer a dedicated site checker when available.' },
+  { value: 'COMIX', label: 'Comix site checker', description: 'Reads Comix series metadata and optional group links.' },
   {
     value: "INCREMENTAL_PROBE",
     label: "Sequential URL probing",
@@ -74,6 +76,9 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
   const [isActive, setIsActive] = useState(item?.is_active ?? true);
   const [tocUrl, setTocUrl] = useState(item?.toc_url ?? "");
   const [chapterExampleUrl, setChapterExampleUrl] = useState("");
+  const [tocExamples, setTocExamples] = useState<string[]>(item?.toc_example_urls ?? ['', '']);
+  const [tocRowHtml, setTocRowHtml] = useState('');
+  const [preferredGroup, setPreferredGroup] = useState(item?.preferred_group ?? '');
   const [category, setCategory] = useState(item?.category ?? "");
   const [checkStrategy, setCheckStrategy] = useState<string>(
     item?.strategy_override ?? "AUTO",
@@ -106,6 +111,9 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
           toc_url: tocUrl.trim() || null,
           category: category || null,
           strategy_override: checkStrategy === 'AUTO' ? null : checkStrategy,
+          preferred_group: preferredGroup || null,
+          toc_example_urls: tocExamples.map((entry) => entry.trim()).filter(Boolean),
+          toc_row_html: tocRowHtml.trim() || undefined,
           note: note.trim() || null,
           is_sensitive: isSensitive,
           latest_chapter: (latestChapter.trim() || null) !== item.latest_chapter ? (latestChapter.trim() || null) : undefined,
@@ -252,7 +260,7 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {STRATEGIES.map((s) => (
+                    {STRATEGIES.filter((s) => s.value !== 'COMIX' || item?.original_url.includes('comix.to')).map((s) => (
                       <SelectItem key={s.value} value={s.value}>
                         {s.label}
                       </SelectItem>
@@ -282,7 +290,7 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
                 />
                 <p className="text-[11px] text-muted-foreground leading-snug">
                   Required for <em>ToC scan</em> strategies. The page must list
-                  chapter links matching the tracker URL template.
+                  actual series chapter links. A URL template is optional.
                 </p>
               </div>
 
@@ -317,7 +325,7 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
                     ) : (
                       <p className="text-amber-400">
                         {patternPreview.data.strategy_used === 'opaque_id'
-                          ? 'This URL has a separate numeric ID before the chapter number. One example cannot predict the next URL; generic URL probing and the current ToC matcher cannot use it. A site-specific checker is needed for automatic updates.'
+                          ? 'This URL has a separate numeric ID before the chapter number. Sequential probing cannot predict the next URL; a ToC scan may find real links.'
                           : 'No reusable chapter URL pattern was found. You can save the item for manual tracking.'}
                       </p>
                     )}
@@ -350,6 +358,10 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
                   <p className="text-[11px] text-muted-foreground break-all">Saved detected regex: <span className="font-mono">{item.chapter_regex}</span></p>
                 )}
               </div>
+              <TocExtractionPanel tocUrl={tocUrl.trim() || item?.series_url || item?.original_url || ''}
+                exampleUrls={tocExamples} setExampleUrls={setTocExamples}
+                rowHtml={tocRowHtml} setRowHtml={setTocRowHtml}
+                  preferredGroup={preferredGroup} setPreferredGroup={setPreferredGroup} />
             </div>
           )}
         </div>

@@ -20,9 +20,12 @@ class ItemCreate(BaseModel):
     category: ItemCategory | None = None
     is_sensitive: bool = False
     note: str | None = Field(default=None, max_length=2000)
-    strategy_override: Literal["FREEWEBNOVEL", "TOC_SCRAPER", "INCREMENTAL_PROBE", "TOC_THEN_PROBE"] | None = None
+    strategy_override: Literal["FREEWEBNOVEL", "COMIX", "TOC_SCRAPER", "INCREMENTAL_PROBE", "TOC_THEN_PROBE"] | None = None
     current_chapter: str | None = None
     latest_chapter: str | None = None
+    preferred_group: str | None = Field(default=None, max_length=200)
+    toc_example_urls: list[str] = Field(default_factory=list, max_length=2)
+    toc_row_html: str | None = Field(default=None, max_length=5000)
 
     @field_validator("url", "chapter_url", "toc_url")
     @classmethod
@@ -36,6 +39,11 @@ class ItemCreate(BaseModel):
             if not valid:
                 raise ValueError("Use an HTTP(S) URL without credentials.")
         return value
+
+    @field_validator("toc_example_urls")
+    @classmethod
+    def example_urls(cls, value: list[str]) -> list[str]:
+        return [cls.web_url(url) for url in value]
 
 
 class ItemUpdate(BaseModel):
@@ -54,12 +62,20 @@ class ItemUpdate(BaseModel):
     is_sensitive: bool | None = None
     note: str | None = Field(default=None, max_length=2000)
     latest_chapter: str | None = None
-    strategy_override: Literal["FREEWEBNOVEL", "TOC_SCRAPER", "INCREMENTAL_PROBE", "TOC_THEN_PROBE"] | None = None
+    strategy_override: Literal["FREEWEBNOVEL", "COMIX", "TOC_SCRAPER", "INCREMENTAL_PROBE", "TOC_THEN_PROBE"] | None = None
+    preferred_group: str | None = Field(default=None, max_length=200)
+    toc_example_urls: list[str] | None = Field(default=None, max_length=2)
+    toc_row_html: str | None = Field(default=None, max_length=5000)
 
     @field_validator("toc_url", "chapter_url")
     @classmethod
     def web_url(cls, value: str | None) -> str | None:
         return ItemCreate.web_url(value)
+
+    @field_validator("toc_example_urls")
+    @classmethod
+    def example_urls(cls, value: list[str] | None) -> list[str] | None:
+        return ItemCreate.example_urls(value) if value is not None else None
 
 
 class ItemRead(BaseModel):
@@ -83,6 +99,12 @@ class ItemRead(BaseModel):
     last_outcome: str | None
     current_chapter: str | None
     latest_chapter: str | None
+    latest_chapter_url: str | None
+    first_chapter_url: str | None
+    preferred_group: str | None
+    toc_example_urls: list[str] = []
+    toc_row_class: str | None
+    toc_latest_page_url: str | None
     check_interval_min: int
     last_checked_at: datetime | None
     latest_chapter_at: datetime | None
@@ -106,3 +128,4 @@ class NextChapterResponse(BaseModel):
     next_chapter: str | None
     next_url: str | None
     message: str
+    destination: Literal["CHAPTER", "TOC", "NONE"] = "NONE"

@@ -377,7 +377,12 @@ def test_archive_round_trip_includes_sensitive_cover(tmp_path, monkeypatch):
             bob = User(username="bob-cover", hashed_password=hash_password("bob-cover-password"))
             db.add_all([alice, bob]); db.flush()
             item = TrackedItem(original_url="https://example.com/cover-series", user_id=alice.id,
-                               is_sensitive=True, current_chapter="12", latest_chapter="15", note="private note")
+                               is_sensitive=True, current_chapter="12", latest_chapter="15", note="private note",
+                               latest_chapter_url="https://example.com/cover-series/chapter-15",
+                               first_chapter_url="https://example.com/cover-series/chapter-1",
+                               preferred_group="team-a",
+                               toc_examples_json='["https://example.com/cover-series/chapter-15"]',
+                               toc_row_class="chapter-row")
             db.add(item); db.commit()
             item_id = item.id
         alice_client = TestClient(main.app)
@@ -398,6 +403,11 @@ def test_archive_round_trip_includes_sensitive_cover(tmp_path, monkeypatch):
         bob_client.post("/auth/safe-view?enabled=false", headers=bob_csrf)
         restored = bob_client.get("/items").json()[0]
         assert (restored["current_chapter"], restored["latest_chapter"], restored["note"], restored["is_sensitive"]) == ("12", "15", "private note", True)
+        assert restored["latest_chapter_url"] == "https://example.com/cover-series/chapter-15"
+        assert restored["first_chapter_url"] == "https://example.com/cover-series/chapter-1"
+        assert restored["preferred_group"] == "team-a"
+        assert restored["toc_example_urls"] == ["https://example.com/cover-series/chapter-15"]
+        assert restored["toc_row_class"] == "chapter-row"
         assert bob_client.get(f"/items/{restored['id']}/cover").content.startswith(b"\xff\xd8")
     finally:
         main.app.dependency_overrides.clear()

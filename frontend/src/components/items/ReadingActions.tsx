@@ -8,7 +8,7 @@ import { toast } from 'sonner'
 export function ReadingActions({ item, compact = false }: { item: ItemRead; compact?: boolean }) {
   const markRead = useMarkRead()
   const [opening, setOpening] = useState(false)
-  const canOpen = Boolean(item.url_template?.includes('{n}') && item.has_unread)
+  const canOpen = item.has_unread === true
 
   async function openNext() {
     // Open synchronously so browsers do not block the tab after the API response.
@@ -20,6 +20,7 @@ export function ReadingActions({ item, compact = false }: { item: ItemRead; comp
       if (next.next_url) {
         if (readingTab) readingTab.location.href = next.next_url
         else window.open(next.next_url, '_blank', 'noopener,noreferrer')
+        if (next.destination === 'TOC') toast.info(next.message)
       } else {
         readingTab?.close()
         toast.info(next.message)
@@ -43,7 +44,7 @@ export function ReadingActions({ item, compact = false }: { item: ItemRead; comp
   }
 
   return <div className={`flex flex-wrap gap-2 ${compact ? 'mt-2' : ''}`}>
-    <Button size="sm" variant="outline" onClick={openNext} disabled={!canOpen || opening} title={canOpen ? 'Open the next unread chapter' : 'Requires unread chapters and a chapter URL pattern'}>Open next</Button>
-    <Button size="sm" variant="outline" onClick={markNext} disabled={!canOpen || markRead.isPending} title={canOpen ? 'Mark the next chapter as read' : 'Requires unread chapters and a chapter URL pattern'}>Mark read</Button>
+    <Button size="sm" variant="outline" onClick={openNext} disabled={!canOpen || opening} title={canOpen ? 'Open the next unread chapter or its ToC' : 'Requires unread chapters'}>Open next</Button>
+    <Button size="sm" variant="outline" onClick={markNext} disabled={!canOpen || markRead.isPending} title={canOpen ? 'Mark the next chapter as read' : 'Requires unread chapters'}>Mark read</Button>
   </div>
 }

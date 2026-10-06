@@ -90,7 +90,14 @@ async def check_item(
                 else:
                     log.new_latest_chapter = result.chapter
                     item.latest_chapter = result.chapter
+                    item.latest_chapter_url = result.chapter_url
                     item.latest_chapter_at = datetime.now(timezone.utc)
+            elif result.outcome == "UNCHANGED" and result.chapter == item.latest_chapter and result.chapter_url:
+                item.latest_chapter_url = result.chapter_url
+            if result.first_url:
+                item.first_chapter_url = result.first_url
+            if result.toc_latest_page_url and result.method == "TOC_SCRAPER":
+                item.toc_latest_page_url = result.toc_latest_page_url
             item.last_checked_at = datetime.now(timezone.utc)
             log.success = log.outcome in {"NEW", "UNCHANGED"}
             if result.outcome in {"NEW", "UNCHANGED"}:

@@ -21,7 +21,8 @@ MAX_ARCHIVE = 100_000_000
 FIELDS = ("title", "original_url", "url_template", "chapter_regex", "pattern_source",
           "check_strategy", "toc_url", "category", "current_chapter", "latest_chapter",
           "check_interval_min", "is_active", "note", "is_sensitive", "series_url",
-          "strategy_override")
+          "strategy_override", "latest_chapter_url", "first_chapter_url",
+          "preferred_group", "toc_examples_json", "toc_row_class", "toc_latest_page_url")
 
 
 class ExportRequest(BaseModel):
@@ -106,11 +107,26 @@ async def import_archive(identity: IdentityDep, db: DbDep, file: UploadFile = Fi
                 if not isinstance(record, dict):
                     raise ValueError("Invalid item record.")
                 url = _normalized(str(record.get("original_url", "")))
-                for key in ("series_url", "toc_url", "url_template"):
+                for key in ("series_url", "toc_url", "url_template", "latest_chapter_url", "first_chapter_url", "toc_latest_page_url"):
                     value = record.get(key)
                     if value is not None:
                         _normalized(str(value).replace("{n}", "1"))
-                if record.get("strategy_override") not in {None, "FREEWEBNOVEL", "TOC_SCRAPER", "INCREMENTAL_PROBE", "TOC_THEN_PROBE"}:
+                hints = json.loads(record.get("toc_examples_json") or "[]")
+                if not isinstance(hints, list) or len(hints) > 2 or any(not isinstance(hint, str) for hint in hints):
+                    raise ValueError("Invalid ToC chapter examples.")
+                for hint in hints:
+                    _normalized(hint)
+                if record.get("preferred_group") is not None and (
+                    not isinstance(record["preferred_group"], str) or len(record["preferred_group"]) > 200
+                ):
+                    raise ValueError("Invalid preferred group.")
+                row_class = record.get("toc_row_class")
+                if row_class is not None and (
+                    not isinstance(row_class, str) or len(row_class) > 80 or
+                    not row_class.replace("-", "").replace("_", "").isalnum()
+                ):
+                    raise ValueError("Invalid ToC row class.")
+                if record.get("strategy_override") not in {None, "FREEWEBNOVEL", "COMIX", "TOC_SCRAPER", "INCREMENTAL_PROBE", "TOC_THEN_PROBE"}:
                     raise ValueError("Invalid checker override.")
                 if url in existing:
                     continue

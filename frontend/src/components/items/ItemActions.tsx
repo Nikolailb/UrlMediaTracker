@@ -30,6 +30,7 @@ export function ItemActions({ item, onEdit, onDelete, onHistory }: ItemActionsPr
       const res = await itemsApi.next(item.id)
       if (res.next_url) {
         window.open(res.next_url, '_blank', 'noopener,noreferrer')
+        if (res.destination === 'TOC') toast.info(res.message)
       } else {
         toast.info(res.message)
       }
@@ -122,7 +123,7 @@ export function ItemActions({ item, onEdit, onDelete, onHistory }: ItemActionsPr
       <DropdownMenuContent align="end">
         <DropdownMenuLabel className="text-xs">Actions</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handleOpenNext} disabled={!item.url_template}>
+        <DropdownMenuItem onClick={handleOpenNext} disabled={!item.has_unread}>
           <ExternalLink className="mr-2 h-4 w-4" />
           Open next chapter
         </DropdownMenuItem>

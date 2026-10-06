@@ -38,6 +38,11 @@ export interface ItemRead {
   last_outcome: string | null
   current_chapter: string | null
   latest_chapter: string | null
+  latest_chapter_url: string | null
+  first_chapter_url: string | null
+  preferred_group: string | null
+  toc_example_urls: string[]
+  toc_row_class: string | null
   check_interval_min: number
   last_checked_at: string | null
   latest_chapter_at: string | null
@@ -63,6 +68,9 @@ export interface ItemCreate {
   strategy_override?: string | null
   current_chapter?: string | null
   latest_chapter?: string | null
+  preferred_group?: string | null
+  toc_example_urls?: string[]
+  toc_row_html?: string | null
 }
 
 export interface ItemUpdate {
@@ -78,6 +86,9 @@ export interface ItemUpdate {
   is_sensitive?: boolean | null
   note?: string | null
   latest_chapter?: string | null
+  preferred_group?: string | null
+  toc_example_urls?: string[] | null
+  toc_row_html?: string | null
   strategy_override?: string | null
 }
 
@@ -90,6 +101,22 @@ export interface NextChapterResponse {
   next_chapter: string | null
   next_url: string | null
   message: string
+  destination: 'CHAPTER' | 'TOC' | 'NONE'
+}
+
+export interface TocExtractionPreview {
+  state: string
+  method: string
+  confidence?: string
+  latest_chapter?: string | null
+  latest_url?: string | null
+  first_url?: string | null
+  title?: string | null
+  cover_url?: string | null
+  groups?: string[]
+  group_labels?: Record<string, string>
+  samples?: Array<{ chapter: string; url: string; group: string | null; source_page: string | null }>
+  warnings: string[]
 }
 
 export interface PatternDetectionRequest {

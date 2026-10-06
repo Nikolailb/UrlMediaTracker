@@ -63,6 +63,13 @@ class TrackedItem(Base):
     # Stored as strings to support decimals (12.5) and suffix variants (183b)
     current_chapter: Mapped[str | None] = mapped_column(String(50), nullable=True)
     latest_chapter: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # REQ-016: an actual chapter link can be used even when no URL template exists.
+    latest_chapter_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    first_chapter_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    preferred_group: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    toc_examples_json: Mapped[str | None] = mapped_column(String(5000), nullable=True)
+    toc_row_class: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    toc_latest_page_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
 
     # Optional table-of-contents URL used by the generic ToC checker
     toc_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)

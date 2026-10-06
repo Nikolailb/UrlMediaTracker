@@ -17,6 +17,7 @@ import { ITEM_CATEGORIES } from '@/types/api'
 import { post } from '@/api/client'
 import { itemsApi } from '@/api/items'
 import { useQueryClient } from '@tanstack/react-query'
+import { TocExtractionPanel } from './TocExtractionPanel'
 
 type SourcePreview = { title: string | null; current_chapter: string | null; latest_chapter: string | null; cover_url: string | null; checker: string; access: { state: string; status_code: number | null } }
 
@@ -50,6 +51,9 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
   const [currentChapter, setCurrentChapter] = useState('')
   const [latestChapter, setLatestChapter] = useState('')
   const [coverUrl, setCoverUrl] = useState('')
+  const [tocExamples, setTocExamples] = useState<string[]>(['', ''])
+  const [tocRowHtml, setTocRowHtml] = useState('')
+  const [preferredGroup, setPreferredGroup] = useState('')
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const detect = usePatternDetect()
@@ -76,6 +80,9 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
       setCurrentChapter('')
       setLatestChapter('')
       setCoverUrl('')
+      setTocExamples(['', ''])
+      setTocRowHtml('')
+      setPreferredGroup('')
     }
   }, [open])
 
@@ -133,6 +140,9 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
         is_sensitive: sensitive,
         current_chapter: currentChapter.trim() || null,
         latest_chapter: latestChapter.trim() || null,
+        preferred_group: preferredGroup || null,
+        toc_example_urls: tocExamples.map((entry) => entry.trim()).filter(Boolean),
+        toc_row_html: tocRowHtml.trim() || null,
       },
       {
         onSuccess: async (created) => {
@@ -238,26 +248,27 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
                     <SelectContent>
                       <SelectItem value="AUTO">Automatic (recommended)</SelectItem>
                       {sourcePreview?.checker === 'FREEWEBNOVEL' && <SelectItem value="FREEWEBNOVEL">FreeWebNovel site checker</SelectItem>}
+                      {sourcePreview?.checker === 'COMIX' && <SelectItem value="COMIX">Comix site checker</SelectItem>}
                       <SelectItem value="TOC_SCRAPER">Table of contents scan</SelectItem>
                       <SelectItem value="INCREMENTAL_PROBE">Sequential URL probing</SelectItem>
                       <SelectItem value="TOC_THEN_PROBE">ToC, then probe if unsupported</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground">The ToC options need a ToC URL and chapter-link pattern. Sequential probing sends multiple requests. Automatic prefers a dedicated site checker when available.</p>
+                  <p className="text-xs text-muted-foreground">ToC scans read actual chapter links and need a ToC URL. Sequential probing needs a predictable chapter URL pattern. Automatic prefers a dedicated site checker.</p>
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="regex">Chapter URL regex (optional · one capture group)</Label>
                   <Input id="regex" placeholder="chapter-(\d+)" value={manualRegex} onChange={(e) => setManualRegex(e.target.value)} className="font-mono text-xs" />
                   <p className="text-xs text-muted-foreground">Use only when the chapter URL pattern needs an override. A series page does not need a regex for a dedicated site checker.</p>
                 </div>
-            {sourcePreview?.checker === 'FREEWEBNOVEL' && strategyOverride === 'AUTO' && <p className="text-xs text-muted-foreground">The FreeWebNovel checker builds chapter links from the series URL. No chapter URL regex is needed.</p>}
-            {(sourcePreview?.checker !== 'FREEWEBNOVEL' || !['AUTO', 'FREEWEBNOVEL'].includes(strategyOverride)) && detect.isPending && (
+            {['FREEWEBNOVEL', 'COMIX'].includes(sourcePreview?.checker ?? '') && strategyOverride === 'AUTO' && <p className="text-xs text-muted-foreground">The dedicated checker needs no chapter URL regex.</p>}
+            {(!['FREEWEBNOVEL', 'COMIX'].includes(sourcePreview?.checker ?? '') || !['AUTO', 'FREEWEBNOVEL', 'COMIX'].includes(strategyOverride)) && detect.isPending && (
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 Detecting pattern…
               </div>
             )}
-            {(sourcePreview?.checker !== 'FREEWEBNOVEL' || !['AUTO', 'FREEWEBNOVEL'].includes(strategyOverride)) && preview && (
+            {(!['FREEWEBNOVEL', 'COMIX'].includes(sourcePreview?.checker ?? '') || !['AUTO', 'FREEWEBNOVEL', 'COMIX'].includes(strategyOverride)) && preview && (
               <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2 text-xs">
                 <div className="flex items-center gap-2 font-medium">
                   <Sparkles className="h-3.5 w-3.5 text-primary" />
@@ -291,13 +302,21 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
                   <div className="flex items-center gap-1.5 text-destructive">
                     <AlertCircle className="h-3.5 w-3.5" />
                     {preview.strategy_used === 'opaque_id'
-                      ? 'This chapter URL has a separate numeric ID. One example cannot predict future links, so generic probing and the current ToC matcher cannot check it automatically. A site-specific checker is needed.'
-                      : 'No chapter URL pattern found. A generic checker needs a chapter URL example to build links; you can still add this for manual tracking.'}
+                      ? 'This chapter URL has a separate numeric ID. Sequential probing cannot predict future links; a ToC scan may still find actual links.'
+                      : 'No reusable URL pattern found. Try a ToC extraction test or track manually.'}
                   </div>
                 )}
               </div>
             )}
               </div>
+              <TocExtractionPanel tocUrl={tocUrl.trim() || url.trim()} exampleUrls={tocExamples}
+                setExampleUrls={setTocExamples} rowHtml={tocRowHtml} setRowHtml={setTocRowHtml}
+                preferredGroup={preferredGroup} setPreferredGroup={setPreferredGroup}
+                onApply={(found) => {
+                  if (found.title) setTitle(found.title)
+                  if (found.latest_chapter) setLatestChapter(found.latest_chapter)
+                  if (found.cover_url) setCoverUrl(found.cover_url)
+                }} />
             </details>
           </div>
         )}

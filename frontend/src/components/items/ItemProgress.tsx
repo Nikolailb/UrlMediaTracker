@@ -13,7 +13,7 @@ interface ChapterLinkProps {
 
 function ChapterLink({ chapter, href }: ChapterLinkProps) {
   if (!chapter) return <span className="text-muted-foreground">—</span>;
-  if (!href) return <span title="Chapter link unavailable: add a chapter URL pattern">{chapter}</span>;
+  if (!href) return <span title="Exact chapter link unavailable; open the series ToC">{chapter}</span>;
   return (
     <a
       href={href}
@@ -39,7 +39,7 @@ export function ItemProgress({ item, className }: ItemProgressProps) {
   const current = item.current_chapter;
   const latest = item.latest_chapter;
   // REQ-011: show a start link without claiming the first chapter was read.
-  const firstUnread = (!current || current === '0') && Boolean(item.url_template?.includes('{n}')) &&
+  const firstUnread = (!current || current === '0') &&
     latest !== null && Number.isFinite(Number(latest)) && Number(latest) >= 1;
   const shownCurrent = firstUnread ? '1' : current;
 
@@ -56,8 +56,8 @@ export function ItemProgress({ item, className }: ItemProgressProps) {
       ? Math.min(100, Math.round((currentF / latestF) * 100))
       : null;
 
-  const currentHref = chapterUrl(item.url_template, shownCurrent);
-  const latestHref = chapterUrl(item.url_template, latest);
+  const currentHref = (shownCurrent === '1' && item.first_chapter_url) || chapterUrl(item.url_template, shownCurrent);
+  const latestHref = item.latest_chapter_url || chapterUrl(item.url_template, latest);
 
   return (
     <div className={`space-y-1 ${className ?? ""}`}>

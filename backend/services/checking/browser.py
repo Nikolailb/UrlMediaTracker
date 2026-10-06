@@ -25,7 +25,8 @@ def browser_enabled_for(url: str) -> bool:
     return bool(settings.FLARESOLVERR_URL and (urlsplit(url).hostname or "").lower() in allowed)
 
 
-async def browser_get(url: str, *, purpose: str, max_bytes: int = 512_000) -> tuple[int, str, bytes, dict[str, str]]:
+async def browser_get(url: str, *, purpose: str, max_bytes: int = 512_000,
+                      wait_seconds: int = 0) -> tuple[int, str, bytes, dict[str, str]]:
     """Fetch one explicitly approved series/ToC URL through FlareSolverr.
 
     The browser service must also be isolated from private network egress at deployment:
@@ -47,6 +48,7 @@ async def browser_get(url: str, *, purpose: str, max_bytes: int = 512_000) -> tu
                 async with client.stream("POST", endpoint, json={
                         "cmd": "request.get", "url": url, "maxTimeout": 35_000,
                         "disableMedia": True,
+                        "waitInSeconds": max(0, min(wait_seconds, 4)),
                 }) as response:
                     response.raise_for_status()
                     raw = bytearray()

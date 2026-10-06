@@ -1,5 +1,6 @@
 """Authorized item, progress, check, and legacy import/export routes."""
 import uuid
+import json
 from datetime import datetime, timezone
 from typing import Annotated
 
@@ -18,6 +19,8 @@ from services.checking.orchestrator import MANUAL_CHECK_COOLDOWN_SECONDS, _last_
 from services.pattern_detection import build_chapter_url, detect_pattern
 from services.checking.http import UnsafeSource, safe_get
 from services.checking.sites.freewebnovel import series_url as freewebnovel_series_url, chapter_template as freewebnovel_template
+from services.checking.sites.comix import series_url as comix_series_url
+from services.checking.strategies.toc import row_class_from_html, parse_toc_examples
 from services.covers import cover_path, save_cover, fetch_cover, MAX_UPLOAD
 
 router = APIRouter(prefix="/items", tags=["items"])
@@ -59,18 +62,19 @@ def _to_read(item: TrackedItem) -> ItemRead:
         value = data.get(field)
         if isinstance(value, datetime) and value.tzinfo is None:
             data[field] = value.replace(tzinfo=timezone.utc)
-    return ItemRead.model_validate({**data, "has_unread": _has_unread(item)})
+    return ItemRead.model_validate({**data, "has_unread": _has_unread(item),
+                                    "toc_example_urls": parse_toc_examples(item.toc_examples_json)})
 
 
 @router.post("", response_model=ItemRead, status_code=201)
 async def create_item(payload: ItemCreate, db: DbDep, identity: IdentityDep):
     # REQ-004: a chapter example supplies the link pattern, never reading progress.
     detection = detect_pattern(payload.chapter_url or payload.url, payload.manual_regex)
-    series_url = freewebnovel_series_url(payload.url)
+    series_url = freewebnovel_series_url(payload.url) or comix_series_url(payload.url)
     template = (freewebnovel_template(series_url)
                 if series_url and payload.strategy_override in {None, "FREEWEBNOVEL"}
                 else detection.url_template)
-    toc_url = payload.toc_url or (payload.url if payload.chapter_url else None)
+    toc_url = payload.toc_url or (payload.url if payload.chapter_url or not detection.url_template else None)
     inferred_chapter = None if payload.chapter_url else detection.current_chapter
     item = TrackedItem(
         id=str(uuid.uuid4()), user_id=identity.library_user_id,
@@ -82,6 +86,9 @@ async def create_item(payload: ItemCreate, db: DbDep, identity: IdentityDep):
         check_interval_min=payload.check_interval_min,
         toc_url=toc_url, category=payload.category,
         note=payload.note, is_sensitive=payload.is_sensitive,
+        preferred_group=payload.preferred_group,
+        toc_examples_json=json.dumps(payload.toc_example_urls) if payload.toc_example_urls else None,
+        toc_row_class=row_class_from_html(payload.toc_row_html),
         strategy_override=payload.strategy_override,
         check_strategy=(CheckStrategy.TOC_THEN_PROBE if toc_url else CheckStrategy.INCREMENTAL_PROBE),
     )
@@ -110,7 +117,8 @@ def export_items(db: DbDep, identity: IdentityDep):
     return [{key: getattr(item, key) for key in (
         "title", "original_url", "url_template", "chapter_regex", "pattern_source",
         "check_strategy", "toc_url", "category", "current_chapter", "latest_chapter",
-        "check_interval_min", "is_active", "note", "is_sensitive")}
+        "check_interval_min", "is_active", "note", "is_sensitive", "latest_chapter_url",
+        "first_chapter_url", "preferred_group", "toc_examples_json", "toc_row_class")}
         for item in _visible_query(db, identity).order_by(TrackedItem.created_at).all()]
 
 
@@ -127,6 +135,12 @@ def update_item(item_id: str, payload: ItemUpdate, db: DbDep, identity: Identity
         raise HTTPException(status.HTTP_409_CONFLICT, "Reveal sensitive entries before marking one sensitive.")
     manual_regex = data.pop("manual_regex", None)
     chapter_example = data.pop("chapter_url", None)
+    example_urls = data.pop("toc_example_urls", None)
+    row_html = data.pop("toc_row_html", None)
+    if example_urls is not None:
+        item.toc_examples_json = json.dumps(example_urls) if example_urls else None
+    if row_html is not None:
+        item.toc_row_class = row_class_from_html(row_html)
     if chapter_example:
         # REQ-004: editing a ToC-first item can replace its chapter-link
         # pattern without treating the example number as reading progress.
@@ -152,10 +166,14 @@ def update_item(item_id: str, payload: ItemUpdate, db: DbDep, identity: Identity
         item.pattern_source = detection.pattern_source
     if "toc_url" in data and "check_strategy" not in data:
         item.check_strategy = CheckStrategy.TOC_SCRAPER if data["toc_url"] else CheckStrategy.INCREMENTAL_PROBE
+    if "toc_url" in data and data["toc_url"] != item.toc_url:
+        item.toc_latest_page_url = None
     if "latest_chapter" in data and item.pending_latest_chapter:
         item.dismissed_candidate = item.pending_latest_chapter if data["latest_chapter"] != item.pending_latest_chapter else None
         item.pending_latest_chapter = None
         item.pending_chapter_url = None
+    if "latest_chapter" in data and data["latest_chapter"] != item.latest_chapter:
+        item.latest_chapter_url = None
     for key, value in data.items():
         setattr(item, key, value)
     item.updated_at = datetime.now(timezone.utc)
@@ -248,21 +266,31 @@ def remove_cover(item_id: str, db: DbDep, identity: IdentityDep):
 @router.get("/{item_id}/next", response_model=NextChapterResponse)
 def get_next_chapter(item_id: str, db: DbDep, identity: IdentityDep):
     item = _get_or_404(item_id, db, identity)
-    if not item.url_template or "{n}" not in item.url_template:
-        return NextChapterResponse(item_id=item_id, next_chapter=None, next_url=None,
-                                   message="A chapter URL pattern is needed to open the next chapter.")
+    toc = item.toc_url or item.series_url or item.original_url
     try:
         # REQ-011: no saved progress starts with chapter 1 without recording a read.
         next_num = str(int(float(item.current_chapter)) + 1) if item.current_chapter else "1"
         if item.latest_chapter and float(next_num) > float(item.latest_chapter):
             return NextChapterResponse(item_id=item_id, next_chapter=None, next_url=None,
-                                       message="You are up to date!")
+                                       message="You are up to date!", destination="NONE")
     except ValueError:
-        return NextChapterResponse(item_id=item_id, next_chapter=None, next_url=None,
-                                   message="Chapter number cannot be incremented automatically.")
-    return NextChapterResponse(item_id=item_id, next_chapter=next_num,
-                               next_url=build_chapter_url(item.url_template, next_num),
-                               message="Next chapter URL generated.")
+        return NextChapterResponse(item_id=item_id, next_chapter=None, next_url=toc,
+                                   message="Exact chapter unknown; opening the ToC.", destination="TOC")
+    if item.url_template and "{n}" in item.url_template:
+        return NextChapterResponse(item_id=item_id, next_chapter=next_num,
+                                   next_url=build_chapter_url(item.url_template, next_num),
+                                   message="Next chapter URL generated.", destination="CHAPTER")
+    if next_num == "1" and item.first_chapter_url:
+        return NextChapterResponse(item_id=item_id, next_chapter=next_num,
+                                   next_url=item.first_chapter_url, message="Opening chapter 1.",
+                                   destination="CHAPTER")
+    if next_num == item.latest_chapter and item.latest_chapter_url:
+        return NextChapterResponse(item_id=item_id, next_chapter=next_num,
+                                   next_url=item.latest_chapter_url, message="Opening latest chapter.",
+                                   destination="CHAPTER")
+    return NextChapterResponse(item_id=item_id, next_chapter=next_num if item.latest_chapter else None,
+                               next_url=toc, message="Exact chapter link unavailable; opening the ToC.",
+                               destination="TOC")
 
 
 @router.post("/{item_id}/mark-read", response_model=ItemRead)
@@ -322,6 +350,7 @@ def resolve_pending(item_id: str, chapter: Annotated[str, Body(embed=True)], db:
         raise HTTPException(status.HTTP_409_CONFLICT, "No pending result.")
     item.dismissed_candidate = item.pending_latest_chapter if chapter != item.pending_latest_chapter else None
     item.latest_chapter = chapter
+    item.latest_chapter_url = item.pending_chapter_url if chapter == item.pending_latest_chapter else None
     item.pending_latest_chapter = None
     item.pending_chapter_url = None
     item.latest_chapter_at = datetime.now(timezone.utc)
