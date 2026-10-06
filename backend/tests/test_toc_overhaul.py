@@ -148,3 +148,13 @@ def test_toc_preview_reports_connection_failure(monkeypatch):
     monkeypatch.setattr(tools, "extract_toc", failed)
     result = asyncio.run(tools.toc_preview(tools.TocPreviewInput(url="https://example.com/series")))
     assert result["state"] == "FAILED"
+
+
+def test_truncated_toc_is_not_unchanged(monkeypatch):
+    async def too_large(url, **_kwargs):
+        return 200, url, b"a" * 512_001, {}
+
+    monkeypatch.setattr(selector, "_checker_get", too_large)
+    found = asyncio.run(selector.extract_toc("https://example.com/series"))
+    assert found.state == "TRUNCATED"
+    assert selector._from_extraction(found, "12").outcome == "FAILED"

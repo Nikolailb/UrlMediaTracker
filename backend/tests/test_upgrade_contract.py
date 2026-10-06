@@ -190,13 +190,17 @@ def test_api_account_isolation_and_safe_view(monkeypatch):
             alice = User(username="alice", hashed_password=hash_password("alice-long-password"))
             bob = User(username="bob", hashed_password=hash_password("bob-long-password"))
             db.add_all([alice, bob]); db.flush()
-            own = TrackedItem(original_url="https://example.com/own", user_id=alice.id)
+            own = TrackedItem(original_url="https://example.com/own", user_id=alice.id,
+                              toc_url="https://example.com/own", current_chapter="12", latest_chapter="15",
+                              first_chapter_url="https://example.com/own/chapter-1",
+                              latest_chapter_url="https://example.com/own/chapter-15")
             sensitive = TrackedItem(original_url="https://example.com/sensitive", user_id=alice.id, is_sensitive=True)
             foreign = TrackedItem(original_url="https://example.com/foreign", user_id=bob.id)
             db.add_all([own, sensitive, foreign]); db.commit()
             own_id, foreign_id, sensitive_id = own.id, foreign.id, sensitive.id
         client = TestClient(main.app)
         assert client.get("/items").status_code == 401
+        assert client.post("/tools/toc-preview", json={"url": "https://example.com/own"}).status_code in {401, 403}
         login = client.post("/auth/login", json={"username": "alice", "password": "alice-long-password"})
         assert login.status_code == 200
         csrf = login.json()["csrf_token"]
@@ -207,6 +211,15 @@ def test_api_account_isolation_and_safe_view(monkeypatch):
         assert client.patch(f"/items/{own_id}", json={"is_sensitive": True}, headers={"X-CSRF-Token": csrf}).status_code == 409
         assert client.get(f"/items/{sensitive_id}/history").status_code == 404
         assert client.get(f"/items/{sensitive_id}/cover").status_code == 404
+        assert client.get(f"/items/{sensitive_id}/next").status_code == 404
+        fallback = client.get(f"/items/{own_id}/next").json()
+        assert (fallback["destination"], fallback["next_chapter"], fallback["next_url"]) == (
+            "TOC", "13", "https://example.com/own")
+        assert client.patch(f"/items/{own_id}", json={"current_chapter": "14"},
+                            headers={"X-CSRF-Token": csrf}).status_code == 200
+        direct = client.get(f"/items/{own_id}/next").json()
+        assert (direct["destination"], direct["next_url"]) == (
+            "CHAPTER", "https://example.com/own/chapter-15")
         archive_response = client.post("/archive/export", json={"password": "alice-long-password"}, headers={"X-CSRF-Token": csrf})
         assert archive_response.status_code == 200
         with zipfile.ZipFile(io.BytesIO(archive_response.content)) as archive:

@@ -45,7 +45,8 @@ The Comix adapter reads latest and first chapter links from the directly
 reachable series metadata. A preferred group's link needs rendered chapter
 rows. A bounded Pi browser request returned HTTP 200 with 20 chapter rows and
 20 group links; afterward about 3 GiB RAM was available and swap remained
-unused. After the REQ-016 image passes CI and deploys, run a fresh verified
+unused. The REQ-016 image and Comix browser option were deployed on 2026-10-06.
+For a new Pi, after the REQ-016 image passes CI and deploys, run a fresh verified
 backup, copy `allow-comix-pi.sh` to the Pi, and run it as root. It changes only
 the exact existing allowlist to `freewebnovel.com,comix.to`, saves the previous
 Compose file under `/srv/keihub/rollback/`, recreates the app, and checks

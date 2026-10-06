@@ -65,3 +65,7 @@ Put a chapter URL example beside the ToC URL in Edit item → Detection. Derive 
 ## D-021 — Actual ToC links and Comix metadata (2026-10-06)
 
 Extract actual series chapter links for generic ToCs; keep sequential probing separate. Comix's public HTML embeds a latest number and URL but no chapter anchors, and its chapter API requires a browser-provided token. Use its series-scoped metadata first, then optionally the guarded browser for group-specific links after host verification. Track the highest chapter across groups once; a preferred group changes only the reading link. When an exact next URL is unknown, open the ToC. A generic URL-template requirement, repeated chapter probing, and a mandatory browser for every check were rejected. REQ-005, REQ-011, REQ-015, REQ-016.
+
+## D-022 — Enable the guarded Comix group lookup on the Pi (2026-10-06)
+
+Allowlist `comix.to` only after a bounded browser request returned HTTP 200 with 20 chapter and group rows, the deployed adapter read a matching group link, and the Pi retained about 3 GiB available RAM with no swap use. Keep direct series metadata as the normal check path; invoke the browser only when a preferred group is set. The host Compose change has a saved copy under `/srv/keihub/rollback/`, and a verified encrypted backup followed activation. A global browser option and browser lookup for every Comix check were rejected because they add latency and Pi load. REQ-015, REQ-016.
