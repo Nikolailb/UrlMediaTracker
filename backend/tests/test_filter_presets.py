@@ -48,7 +48,7 @@ def test_presets_are_scoped_to_selected_library_and_portable(monkeypatch):
         assert defaults[1]["categories"] == ["Novel", "Light Novel"]
         assert defaults[2]["unread_only"] is True
 
-        payload = {"name": "Weekend", "categories": ["Manga", "Webtoon"], "unread_only": True, "include_inactive": False}
+        payload = {"name": "Weekend", "categories": ["Manga", "Webtoon"], "unread_only": True, "include_inactive": False, "sort_key": "title", "sort_dir": "asc"}
         response = admin_client.post("/filter-presets", json=payload, headers=headers)
         assert response.status_code == 201, response.text
         preset_id = response.json()["id"]
@@ -57,6 +57,7 @@ def test_presets_are_scoped_to_selected_library_and_portable(monkeypatch):
         assert admin_client.put(f"/filter-presets/{preset_id}", json={**payload, "name": "WEEKEND"}, headers=headers).status_code == 200
         assert admin_client.post("/filter-presets", json={**payload, "name": "weekend"}, headers=headers).status_code == 409
         assert admin_client.post("/filter-presets", json={**payload, "categories": ["Unknown"]}, headers=headers).status_code == 422
+        assert admin_client.post("/filter-presets", json={**payload, "sort_key": "unknown"}, headers=headers).status_code == 422
         assert admin_client.delete("/filter-presets/images", headers=headers).status_code == 404
 
         reader_client = TestClient(main.app)
@@ -69,7 +70,7 @@ def test_presets_are_scoped_to_selected_library_and_portable(monkeypatch):
         assert exported.status_code == 200
         with zipfile.ZipFile(io.BytesIO(exported.content)) as archive:
             saved = json.loads(archive.read("presets.json"))
-        assert saved == [{"name": "WEEKEND", "categories": ["Manga", "Webtoon"], "unread_only": True, "include_inactive": False}]
+        assert saved == [{"name": "WEEKEND", "categories": ["Manga", "Webtoon"], "unread_only": True, "include_inactive": False, "sort_key": "title", "sort_dir": "asc"}]
         imported = admin_client.post("/archive/import", files={"file": ("account.zip", exported.content, "application/zip")}, headers=headers)
         assert imported.status_code == 201
         assert len(admin_client.get("/filter-presets", headers=headers).json()) == 4

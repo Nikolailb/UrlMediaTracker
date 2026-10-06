@@ -14,18 +14,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuCheckboxItem,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ItemTable } from "./ItemTable";
 import { ItemCards } from "./ItemCards";
 import { AddItemDialog } from "./AddItemDialog";
@@ -47,7 +37,7 @@ import { ITEM_CATEGORIES } from "@/types/api";
 import type { FilterPreset, ItemCategory } from "@/types/api";
 import { useFilterPresets } from '@/hooks/useFilterPresets'
 import { useAuth } from '@/auth/context'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { FilterPresetDialog } from './FilterPresetDialog'
 import { SiteTestDialog } from './SiteTestDialog'
 import { ArchiveDialog } from './ArchiveDialog'
@@ -83,8 +73,11 @@ function ItemListContent() {
   const [siteTestOpen, setSiteTestOpen] = useState(false)
   const [archiveOpen, setArchiveOpen] = useState(false)
   const [presetDialogOpen, setPresetDialogOpen] = useState(false)
+  const [presetModalOpen, setPresetModalOpen] = useState(false)
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [editingPreset, setEditingPreset] = useState<FilterPreset | null>(null)
   const [activePresetId, setActivePresetId] = useState('all')
+  const [presetDirty, setPresetDirty] = useState(false)
   const [view, setView] = useState<'table' | 'cards'>(() => (localStorage.getItem('tracker-view') === 'cards' ? 'cards' : 'table'))
 
   const [search, setSearch] = useState("");
@@ -110,20 +103,38 @@ function ItemListContent() {
   const importItems = useImportItems();
 
   const activePreset = presets.find((preset) => preset.id === activePresetId)
-  const initialPreset = useMemo(() => ({ categories, unread_only: showUnreadOnly, include_inactive: showInactive }), [categories, showUnreadOnly, showInactive])
+  const initialPreset = useMemo(() => ({ categories, unread_only: showUnreadOnly, include_inactive: showInactive, sort_key: sortKey, sort_dir: sortDir }), [categories, showUnreadOnly, showInactive, sortKey, sortDir])
 
   function applyPreset(preset: FilterPreset | null) {
     setCategories(preset?.categories ?? [])
     setShowUnreadOnly(preset?.unread_only ?? false)
     setShowInactive(preset?.include_inactive ?? true)
+    setSortKey(preset?.sort_key ?? 'latest_chapter_at')
+    setSortDir(preset?.sort_dir ?? 'desc')
     setActivePresetId(preset?.id ?? 'all')
+    setPresetDirty(false)
   }
 
   function toggleCategory(category: ItemCategory) {
     setCategories((previous) => previous.includes(category)
       ? previous.filter((value) => value !== category)
       : [...previous, category])
-    setActivePresetId('custom')
+    setPresetDirty(true)
+  }
+
+  function clearFilters() {
+    setShowInactive(true)
+    setShowUnreadOnly(false)
+    setCategories([])
+    setSortKey('latest_chapter_at')
+    setSortDir('desc')
+    setPresetDirty(true)
+  }
+
+  function openSavePreset(preset: FilterPreset | null) {
+    setFiltersOpen(false)
+    setEditingPreset(preset)
+    setPresetDialogOpen(true)
   }
 
   function handleSort(key: SortKey) {
@@ -133,6 +144,7 @@ function ItemListContent() {
       setSortKey(key);
       setSortDir("desc");
     }
+    setPresetDirty(true)
   }
 
   const filtered = useMemo(() => {
@@ -305,7 +317,8 @@ function ItemListContent() {
   const activeFilterCount =
     (showUnreadOnly ? 1 : 0) +
     (!showInactive ? 1 : 0) +
-    (categories.length ? 1 : 0);
+    (categories.length ? 1 : 0) +
+    (sortKey !== 'latest_chapter_at' || sortDir !== 'desc' ? 1 : 0);
 
   return (
     <div className="space-y-4">
@@ -318,27 +331,82 @@ function ItemListContent() {
         onChange={handleImportFile}
       />
 
-      {/* Compact preset picker, including on phones. */}
-      <div className="flex items-center gap-2 min-w-0" aria-label="Saved filters">
-        <label htmlFor="preset-picker" className="sr-only">Filter preset</label>
-        <Select value={activePresetId} onValueChange={(id) => {
-          if (id === 'all') applyPreset(null)
-          else if (id !== 'custom') applyPreset(presets.find((preset) => preset.id === id) ?? null)
-        }}>
-          <SelectTrigger id="preset-picker" className="h-9 flex-1 min-w-0 max-w-xs" aria-label="Filter preset">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="max-w-[calc(100vw-2rem)]">
-            <SelectItem value="all">All items</SelectItem>
-            {activePresetId === 'custom' && <SelectItem value="custom">Custom filter</SelectItem>}
-            {presets.map((preset) => <SelectItem key={preset.id} value={preset.id}>{preset.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <Button size="sm" variant="outline" className="shrink-0" onClick={() => { setEditingPreset(null); setPresetDialogOpen(true) }}>Save</Button>
-        {activePreset && !activePreset.builtin && (
-          <Button size="sm" variant="outline" className="shrink-0" onClick={() => { setEditingPreset(activePreset); setPresetDialogOpen(true) }}>Edit</Button>
-        )}
+      {/* Presets stay visible on desktop and use a compact modal on phones. */}
+      <div className="hidden md:flex flex-wrap items-center gap-2" aria-label="Saved filters">
+        <Button size="sm" variant={activePresetId === 'all' && !presetDirty ? 'default' : 'outline'} onClick={() => applyPreset(null)}>All</Button>
+        {presets.map((preset) => <Button key={preset.id} size="sm" className="max-w-full truncate" variant={activePresetId === preset.id && !presetDirty ? 'default' : 'outline'} onClick={() => applyPreset(preset)}>{preset.name}</Button>)}
+        {presetDirty && <span className="text-xs text-muted-foreground">Unsaved filters</span>}
       </div>
+      <div className="flex md:hidden items-center gap-2 min-w-0" aria-label="Saved filters">
+        <Button size="sm" variant="outline" className="min-w-0 flex-1 justify-start truncate" onClick={() => setPresetModalOpen(true)}>Presets: {activePreset?.name ?? 'All'}{presetDirty ? ' (edited)' : ''}</Button>
+      </div>
+      <Dialog open={presetModalOpen} onOpenChange={setPresetModalOpen}>
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-sm max-h-[calc(100dvh-2rem)] overflow-y-auto">
+          <DialogHeader><DialogTitle>Filter presets</DialogTitle><DialogDescription>Choose a saved filter for your reading queue.</DialogDescription></DialogHeader>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant={activePresetId === 'all' && !presetDirty ? 'default' : 'outline'} onClick={() => { applyPreset(null); setPresetModalOpen(false) }}>All</Button>
+            {presets.map((preset) => <Button key={preset.id} size="sm" className="max-w-full truncate" variant={activePresetId === preset.id && !presetDirty ? 'default' : 'outline'} onClick={() => { applyPreset(preset); setPresetModalOpen(false) }}>{preset.name}</Button>)}
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={filtersOpen} onOpenChange={setFiltersOpen}>
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Filters &amp; sort</DialogTitle>
+            <DialogDescription>Choose what appears in your reading queue, then save these choices as a preset.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-5 text-sm">
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={showInactive} onChange={(event) => { setShowInactive(event.target.checked); setPresetDirty(true) }} /> Show inactive items</label>
+              <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={showUnreadOnly} onChange={(event) => { setShowUnreadOnly(event.target.checked); setPresetDirty(true) }} /> Unread only</label>
+            </div>
+            <div className="space-y-2">
+              <p className="font-medium">Categories <span className="font-normal text-muted-foreground">(any selected; none means all)</span></p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
+                {ITEM_CATEGORIES.map((category) => (
+                  <label key={category} className="flex items-center gap-2 cursor-pointer min-w-0">
+                    <input type="checkbox" checked={categories.includes(category)} onChange={() => toggleCategory(category)} />
+                    <span className="truncate">{category}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label htmlFor="filter-sort-key" className="font-medium">Sort by</label>
+                <Select value={sortKey} onValueChange={(value) => { setSortKey(value as SortKey); setPresetDirty(true) }}>
+                  <SelectTrigger id="filter-sort-key"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="latest_chapter_at">Recently updated</SelectItem>
+                    <SelectItem value="created_at">Date added</SelectItem>
+                    <SelectItem value="title">Title</SelectItem>
+                    <SelectItem value="last_checked_at">Last checked</SelectItem>
+                    <SelectItem value="has_unread">Unread gap</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="filter-sort-dir" className="font-medium">Direction</label>
+                <Select value={sortDir} onValueChange={(value) => { setSortDir(value as SortDir); setPresetDirty(true) }}>
+                  <SelectTrigger id="filter-sort-dir"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="desc">Descending</SelectItem>
+                    <SelectItem value="asc">Ascending</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:justify-between">
+            <Button variant="ghost" onClick={clearFilters}>Clear filters</Button>
+            <div className="flex flex-wrap gap-2">
+              {activePreset && !activePreset.builtin && <Button variant="outline" onClick={() => openSavePreset(activePreset)}>Update preset</Button>}
+              <Button variant="outline" onClick={() => openSavePreset(null)}>Save as preset</Button>
+              <Button onClick={() => setFiltersOpen(false)}>Done</Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <p className="text-xs text-muted-foreground">{filtered.filter((item) => item.has_unread).length} unread · {filtered.filter((item) => item.pending_latest_chapter).length} pending review · {filtered.filter((item) => item.consecutive_failures > 0).length} check issues</p>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative flex-1 max-w-sm">
@@ -355,100 +423,15 @@ function ItemListContent() {
           <Button variant="outline" size="sm" onClick={() => setSiteTestOpen(true)}>Test site</Button>
           <Button variant="outline" size="sm" onClick={() => setArchiveOpen(true)}>Archive</Button>
           {!isMobile && <Button variant="outline" size="sm" title={view === 'table' ? 'Card view' : 'Table view'} onClick={() => { const next = view === 'table' ? 'cards' : 'table'; setView(next); localStorage.setItem('tracker-view', next) }}>{view === 'table' ? <LayoutGrid className="h-4 w-4" /> : <List className="h-4 w-4" />}</Button>}
-          {/* Filter / sort menu */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-2">
-                <SlidersHorizontal className="h-4 w-4" />
-                Filters
-                {activeFilterCount > 0 && (
-                  <Badge
-                    variant="default"
-                    className="h-4 w-4 rounded-full p-0 flex items-center justify-center text-[10px]"
-                  >
-                    {activeFilterCount}
-                  </Badge>
-                )}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56 p-0">
-              <div className="px-1 py-1 border-b border-border flex items-center justify-between">
-                <span className="px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  Filters &amp; sort
-                </span>
-                {activeFilterCount > 0 && (
-                  <DropdownMenuItem
-                    className="h-6 px-2 text-xs text-destructive focus:text-destructive cursor-pointer"
-                    onSelect={() => {
-                      setShowInactive(true);
-                      setShowUnreadOnly(false);
-                      setCategories([]);
-                      setActivePresetId('all');
-                    }}
-                  >
-                    Clear filters
-                  </DropdownMenuItem>
-                )}
-              </div>
-              <div className="overflow-y-auto max-h-[min(24rem,calc(100dvh-8rem))] py-1">
-                <DropdownMenuCheckboxItem
-                  checked={showInactive}
-                  onCheckedChange={(value) => { setShowInactive(value); setActivePresetId('custom') }}
-                >
-                  Show inactive items
-                </DropdownMenuCheckboxItem>
-                <DropdownMenuCheckboxItem
-                  checked={showUnreadOnly}
-                  onCheckedChange={(value) => { setShowUnreadOnly(value); setActivePresetId('custom') }}
-                >
-                  Unread only
-                </DropdownMenuCheckboxItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuLabel>Categories (any selected)</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                  {ITEM_CATEGORIES.map((c) => (
-                    <DropdownMenuCheckboxItem key={c} checked={categories.includes(c)} onCheckedChange={() => toggleCategory(c)} onSelect={(event) => event.preventDefault()}>
-                      {c}
-                    </DropdownMenuCheckboxItem>
-                  ))}
-                <DropdownMenuSeparator />
-                <DropdownMenuLabel>Sort by</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuRadioGroup
-                  value={sortKey}
-                  onValueChange={(v) => setSortKey(v as SortKey)}
-                >
-                  <DropdownMenuRadioItem value="latest_chapter_at">
-                    Recently updated
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="created_at">
-                    Date added
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="title">
-                    Title
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="last_checked_at">
-                    Last checked
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="has_unread">
-                    Unread gap
-                  </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-                <DropdownMenuSeparator />
-                <DropdownMenuRadioGroup
-                  value={sortDir}
-                  onValueChange={(v) => setSortDir(v as SortDir)}
-                >
-                  <DropdownMenuRadioItem value="desc">
-                    Descending
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="asc">
-                    Ascending
-                  </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-              </div>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Button variant="outline" size="sm" className="gap-2" onClick={() => setFiltersOpen(true)}>
+            <SlidersHorizontal className="h-4 w-4" />
+            Filters
+            {activeFilterCount > 0 && (
+              <Badge variant="default" className="h-4 w-4 rounded-full p-0 flex items-center justify-center text-[10px]">
+                {activeFilterCount}
+              </Badge>
+            )}
+          </Button>
 
           {/* Import / export */}
           <Button

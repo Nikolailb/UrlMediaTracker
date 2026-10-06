@@ -308,6 +308,53 @@ def test_cover_is_decoded_and_stored_locally(tmp_path, monkeypatch):
         save_cover(b"not an image")
 
 
+def test_cover_url_fetch_is_guarded_and_authorized(tmp_path, monkeypatch):
+    pytest.importorskip("PIL")
+    from PIL import Image
+    from config import settings
+    from routers import items as item_routes
+
+    monkeypatch.setattr(settings, "COVER_DIR", str(tmp_path / "covers"))
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    def session_factory(): return Session(engine)
+    def test_db():
+        with session_factory() as db: yield db
+    monkeypatch.setattr(main, "SessionLocal", session_factory)
+    main.app.dependency_overrides[get_db] = test_db
+    try:
+        with session_factory() as db:
+            owner = User(username="cover-owner", hashed_password=hash_password("cover-owner-password"))
+            other = User(username="cover-other", hashed_password=hash_password("cover-other-password"))
+            db.add_all([owner, other]); db.flush()
+            item = TrackedItem(original_url="https://example.com/series", user_id=owner.id)
+            db.add(item); db.commit()
+            item_id = item.id
+        client = TestClient(main.app)
+        csrf = client.post("/auth/login", json={"username": "cover-owner", "password": "cover-owner-password"}).json()["csrf_token"]
+        headers = {"X-CSRF-Token": csrf}
+        denied = client.post(f"/items/{item_id}/cover-url", json={"url": "http://127.0.0.1/cover.png"}, headers=headers)
+        assert denied.status_code == 422
+        assert client.get(f"/items/{item_id}").json()["cover_filename"] is None
+
+        image = Image.new("RGB", (4, 4), (50, 100, 150))
+        raw = io.BytesIO(); image.save(raw, format="PNG")
+        async def fake_get(url, **kwargs):
+            assert url == "https://images.example.com/cover.png"
+            assert kwargs["max_bytes"] > len(raw.getvalue())
+            return 200, url, raw.getvalue(), {"content-type": "image/png"}
+        monkeypatch.setattr(item_routes, "safe_get", fake_get)
+        added = client.post(f"/items/{item_id}/cover-url", json={"url": "https://images.example.com/cover.png"}, headers=headers)
+        assert added.status_code == 200, added.text
+        assert client.get(f"/items/{item_id}/cover").content.startswith(b"\xff\xd8")
+
+        other_client = TestClient(main.app)
+        other_csrf = other_client.post("/auth/login", json={"username": "cover-other", "password": "cover-other-password"}).json()["csrf_token"]
+        assert other_client.post(f"/items/{item_id}/cover-url", json={"url": "https://images.example.com/cover.png"}, headers={"X-CSRF-Token": other_csrf}).status_code == 404
+    finally:
+        main.app.dependency_overrides.clear()
+
+
 def test_archive_round_trip_includes_sensitive_cover(tmp_path, monkeypatch):
     pytest.importorskip("PIL")
     from PIL import Image

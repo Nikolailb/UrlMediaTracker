@@ -57,7 +57,8 @@ def export_archive(payload: ExportRequest, identity: IdentityDep, db: DbDep):
         presets = db.query(FilterPreset).filter(FilterPreset.user_id == identity.library_user_id).order_by(FilterPreset.name_key).all()
         archive.writestr("presets.json", json.dumps([
             {"name": row.name, "categories": json.loads(row.categories_json),
-             "unread_only": row.unread_only, "include_inactive": row.include_inactive}
+             "unread_only": row.unread_only, "include_inactive": row.include_inactive,
+             "sort_key": row.sort_key, "sort_dir": row.sort_dir}
             for row in presets
         ], ensure_ascii=False))
     return Response(buffer.getvalue(), media_type="application/zip",

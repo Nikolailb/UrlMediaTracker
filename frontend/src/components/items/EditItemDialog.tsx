@@ -80,6 +80,9 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
   const [isSensitive, setIsSensitive] = useState(item?.is_sensitive ?? false)
   const [latestChapter, setLatestChapter] = useState(item?.latest_chapter ?? '')
   const [pendingDecision, setPendingDecision] = useState(item?.pending_latest_chapter ?? '')
+  const [coverUrl, setCoverUrl] = useState('')
+  const [coverFilename, setCoverFilename] = useState(item?.cover_filename ?? null)
+  const [coverBusy, setCoverBusy] = useState(false)
   const qc = useQueryClient()
   const { selectedUser } = useAuth()
 
@@ -175,9 +178,13 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
               <div className="space-y-1.5"><Label htmlFor="edit-note">Personal note</Label><Input id="edit-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} /></div>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={isSensitive} onChange={(e) => setIsSensitive(e.target.checked)} /> Sensitive entry</label>
               <div className="space-y-2 text-sm"><Label>Cover image</Label>
-                {item?.cover_filename && <img src={`/api/items/${item.id}/cover${selectedUser ? `?user_id=${encodeURIComponent(selectedUser)}` : ''}`} alt="Current cover" className="h-24 w-16 object-cover rounded" />}
-                <Input type="file" accept="image/png,image/jpeg,image/webp" onChange={async (e) => { const file = e.target.files?.[0]; if (!file || !item) return; try { await itemsApi.uploadCover(item.id, file); qc.invalidateQueries({ queryKey: ['items'] }); toast.success('Cover updated.') } catch (error) { toast.error(error instanceof Error ? error.message : 'Cover upload failed.') } }} />
-                {item?.cover_filename && <Button size="sm" variant="outline" onClick={async () => { await itemsApi.removeCover(item.id); qc.invalidateQueries({ queryKey: ['items'] }) }}>Remove cover</Button>}
+                {coverFilename && item && <img src={`/api/items/${item.id}/cover?${selectedUser ? `user_id=${encodeURIComponent(selectedUser)}&` : ''}v=${encodeURIComponent(coverFilename)}`} alt="Current cover" className="h-24 w-16 object-cover rounded" />}
+                <Input type="file" accept="image/png,image/jpeg,image/webp" disabled={coverBusy} onChange={async (e) => { const file = e.target.files?.[0]; if (!file || !item) return; setCoverBusy(true); try { const updated = await itemsApi.uploadCover(item.id, file); setCoverFilename(updated.cover_filename); qc.invalidateQueries({ queryKey: ['items'] }); toast.success('Cover updated.') } catch (error) { toast.error(error instanceof Error ? error.message : 'Cover upload failed.') } finally { setCoverBusy(false); e.target.value = '' } }} />
+                <div className="flex gap-2">
+                  <Input aria-label="Cover image URL" type="url" placeholder="https://example.com/cover.jpg" value={coverUrl} onChange={(e) => setCoverUrl(e.target.value)} disabled={coverBusy} />
+                  <Button size="sm" variant="outline" disabled={!coverUrl.trim() || coverBusy} onClick={async () => { if (!item) return; setCoverBusy(true); try { const updated = await itemsApi.setCoverUrl(item.id, coverUrl.trim()); setCoverFilename(updated.cover_filename); setCoverUrl(''); qc.invalidateQueries({ queryKey: ['items'] }); toast.success('Cover fetched and saved.') } catch (error) { toast.error(error instanceof Error ? error.message : 'Could not fetch cover.') } finally { setCoverBusy(false) } }}>Use URL</Button>
+                </div>
+                {coverFilename && <Button size="sm" variant="outline" disabled={coverBusy} onClick={async () => { if (!item) return; setCoverBusy(true); try { await itemsApi.removeCover(item.id); setCoverFilename(null); qc.invalidateQueries({ queryKey: ['items'] }); toast.success('Cover removed.') } catch (error) { toast.error(error instanceof Error ? error.message : 'Could not remove cover.') } finally { setCoverBusy(false) } }}>Remove cover</Button>}
               </div>
 
               <div className="space-y-1.5">

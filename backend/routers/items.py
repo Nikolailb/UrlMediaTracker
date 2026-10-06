@@ -5,7 +5,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status, File, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
+import httpx
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -15,7 +16,7 @@ from schemas.item import ItemCreate, ItemRead, ItemUpdate, MarkReadRequest, Next
 from services.auth import Identity, IdentityDep, owner_id
 from services.chapter_checker import MANUAL_CHECK_COOLDOWN_SECONDS, _last_manual_check, check_item
 from services.pattern_detection import build_chapter_url, detect_pattern
-from services.site_checker import freewebnovel_series_url, freewebnovel_template
+from services.site_checker import UnsafeSource, freewebnovel_series_url, freewebnovel_template, safe_get
 from services.covers import cover_path, save_cover, fetch_cover, MAX_UPLOAD
 
 router = APIRouter(prefix="/items", tags=["items"])
@@ -165,6 +166,39 @@ async def upload_cover(item_id: str, db: DbDep, identity: IdentityDep, file: Upl
     old = item.cover_filename
     item.cover_filename = filename
     db.commit()
+    if old:
+        cover_path(old).unlink(missing_ok=True)
+    db.refresh(item)
+    return _to_read(item)
+
+
+class CoverUrlRequest(BaseModel):
+    url: str
+
+
+@router.post("/{item_id}/cover-url", response_model=ItemRead)
+async def set_cover_url(item_id: str, payload: CoverUrlRequest, db: DbDep, identity: IdentityDep):
+    """Fetch and normalize a public image without exposing the browser to the remote URL."""
+    item = _get_or_404(item_id, db, identity)
+    try:
+        response_status, _, raw, headers = await safe_get(payload.url, max_bytes=MAX_UPLOAD + 1)
+        if response_status != 200:
+            raise ValueError(f"Image URL returned HTTP {response_status}.")
+        if not headers.get("content-type", "").lower().startswith("image/"):
+            raise ValueError("URL did not return an image.")
+        if len(raw) > MAX_UPLOAD:
+            raise ValueError("Cover exceeds 5 MB.")
+        filename = save_cover(raw)
+    except (UnsafeSource, httpx.RequestError, ValueError) as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)[:200]) from exc
+    old = item.cover_filename
+    item.cover_filename = filename
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        cover_path(filename).unlink(missing_ok=True)
+        raise
     if old:
         cover_path(old).unlink(missing_ok=True)
     db.refresh(item)

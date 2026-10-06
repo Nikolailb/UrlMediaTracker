@@ -15,6 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import type { PatternDetectionResult } from '@/types/api'
 import { ITEM_CATEGORIES } from '@/types/api'
 import { post } from '@/api/client'
+import { itemsApi } from '@/api/items'
+import { useQueryClient } from '@tanstack/react-query'
 
 type SourcePreview = { title: string | null; current_chapter: string | null; latest_chapter: string | null; cover_url: string | null; checker: string; access: { state: string; status_code: number | null } }
 
@@ -43,10 +45,12 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
   const [note, setNote] = useState('')
   const [sensitive, setSensitive] = useState(false)
   const [currentChapter, setCurrentChapter] = useState('')
+  const [coverUrl, setCoverUrl] = useState('')
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const detect = usePatternDetect()
   const create = useCreateItem()
+  const queryClient = useQueryClient()
 
   // Reset on close
   useEffect(() => {
@@ -63,6 +67,7 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
       setNote('')
       setSensitive(false)
       setCurrentChapter('')
+      setCoverUrl('')
     }
   }, [open])
 
@@ -111,8 +116,16 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
         latest_chapter: sourcePreview?.latest_chapter || preview?.current_chapter || null,
       },
       {
-        onSuccess: () => {
-          toast.success('Item added.')
+        onSuccess: async (created) => {
+          if (coverUrl.trim()) {
+            try {
+              await itemsApi.setCoverUrl(created.id, coverUrl.trim())
+              await queryClient.invalidateQueries({ queryKey: ['items'] })
+              toast.success('Item and cover added.')
+            } catch (error) {
+              toast.warning(`Item added, but cover could not be fetched: ${error instanceof Error ? error.message : 'unknown error'}`)
+            }
+          } else toast.success('Item added.')
           onOpenChange(false)
         },
         onError: (err) => toast.error(err.message),
@@ -122,7 +135,7 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{step === 1 ? 'Add tracked item' : 'Confirm details'}</DialogTitle>
           <DialogDescription>
@@ -286,6 +299,7 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
             </div>
 
             <div className="space-y-1.5"><Label htmlFor="add-note">Personal note (optional)</Label><Input id="add-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} /></div>
+            <div className="space-y-1.5"><Label htmlFor="add-cover-url">Cover image URL (optional)</Label><Input id="add-cover-url" type="url" placeholder="https://example.com/cover.jpg" value={coverUrl} onChange={(e) => setCoverUrl(e.target.value)} /></div>
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={sensitive} onChange={(e) => setSensitive(e.target.checked)} /> Sensitive entry</label>
 
             {/* Summary */}

@@ -49,19 +49,19 @@ Acceptance: 644-to-5682 is held, one-chapter increase applies, and pending/revie
 ## Daily use and portability
 
 ### REQ-009 — Queue, views, filters
-Keep the table and add a selectable cover-card view on desktop/tablet. Replace the category chip strip with a compact preset picker that works at phone width. Provide built-in Images (Manhwa, Manhua, Manga, Webtoon, Pornhwa, Comic, Anime), Words (Novel, Light Novel), and Unread presets. An account can create, rename, change, and delete its own additional presets. A preset stores an OR list of categories, unread-only, and whether inactive entries appear; an empty category list means all categories. Search, sort, and safe view are independent and are not saved in presets. Built-ins remain available and cannot be changed. The reading queue remains home; no separate analytics dashboard.
+Keep the table and add a selectable cover-card view on desktop/tablet. Show wrapping preset chips on desktop and a compact preset modal on phones. Provide built-in Images (Manhwa, Manhua, Manga, Webtoon, Pornhwa, Comic, Anime), Words (Novel, Light Novel), and Unread presets. An account can create, rename, change, and delete its own additional presets. The Filters modal edits and saves the full current state: an OR list of categories, unread-only, include-inactive, sort key, and sort direction. An empty category list means all categories. Search and safe view stay independent. Built-ins remain available and cannot be changed. The reading queue remains home; no separate analytics dashboard.
 
-Acceptance: selecting each preset applies its criteria in both views; the account can save a combined filter, reload, edit it, and delete it; another account cannot access that preset through the API. Manual filter changes are marked as a custom filter until saved. The picker and editor fit at 360 px without a horizontal filter scrollbar. Safe view still excludes sensitive entries regardless of preset.
+Acceptance: selecting each preset applies all saved filter and sort criteria in both views; Save and Update appear in the Filters modal and capture its current state without requiring the criteria to be re-entered. The account can reload, update, rename, and delete a preset; another account cannot access it through the API. Desktop chips wrap at the container edge and phone presets fit a modal at 360 px without horizontal page overflow. Safe view still excludes sensitive entries regardless of preset.
 
 ### REQ-010 — Notes and covers
-Support an optional short note and one locally stored cover. Try safe metadata fetch; allow upload, replacement, and removal. No other file attachments. Missing covers use a placeholder.
+Support an optional short note and one locally stored cover. Try safe metadata fetch; allow upload, direct public image URL fetch, replacement, and removal. No other file attachments. Missing covers use a placeholder.
 
-Acceptance: validate type, size, and decoded image; cover API enforces authorization and safe view; backups and exports include covers.
+Acceptance: validate type, size, and decoded image for both upload and URL fetch; reject private-network targets and recheck redirects; cover API enforces authorization and safe view; backups and exports include covers.
 
 ### REQ-011 — Mobile reading
-Make open-next and mark-read prominent touch actions on phones. Search, filters, view choice, and editing remain usable without horizontal overflow.
+Make open-next and mark-read prominent touch actions on phones and visible in the table. Link item titles to the ToC or series URL. Link progress chapter numbers to their specific chapter URL when a reliable template is known. Search, filters, view choice, and editing remain usable without horizontal overflow.
 
-Acceptance: core actions work at 360 px width with touch and keyboard access.
+Acceptance: core actions work at 360 px width with touch and keyboard access; title and known chapter links open the intended destination. Chapter numbers are plain foreground text until hovered, when they match title links' blue and underline styling. Unavailable chapter links have clear feedback.
 
 ### REQ-012 — Portable account archive
 An explicit password-confirmed full export produces a versioned ZIP containing entries, progress, notes, sensitive entries, covers, and custom filter presets. Import targets the selected authorized account and deduplicates normalized URLs and preset names within it. Support legacy JSON import where safe. Operational backup is separate.

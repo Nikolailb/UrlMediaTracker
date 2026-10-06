@@ -18,5 +18,7 @@ class FilterPreset(Base):
     categories_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     unread_only: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     include_inactive: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    sort_key: Mapped[str] = mapped_column(String(30), nullable=False, default="latest_chapter_at")
+    sort_dir: Mapped[str] = mapped_column(String(4), nullable=False, default="desc")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)

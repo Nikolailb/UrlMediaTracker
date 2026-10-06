@@ -10,6 +10,8 @@ export interface FilterPreset {
   categories: ItemCategory[]
   unread_only: boolean
   include_inactive: boolean
+  sort_key: 'title' | 'created_at' | 'latest_chapter_at' | 'last_checked_at' | 'has_unread'
+  sort_dir: 'asc' | 'desc'
   builtin: boolean
 }
 

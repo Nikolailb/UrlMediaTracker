@@ -37,6 +37,7 @@ export const itemsApi = {
   check: (id: string) => post<CheckResult>(`/items/${id}/check`),
   resolvePending: (id: string, chapter: string) => post<ItemRead>(`/items/${id}/resolve-pending`, { chapter }),
   uploadCover: (id: string, file: File) => postFile<ItemRead>(`/items/${id}/cover`, file),
+  setCoverUrl: (id: string, url: string) => post<ItemRead>(`/items/${id}/cover-url`, { url }),
   removeCover: (id: string) => del(`/items/${id}/cover`),
 
   checkAll: () => post<CheckAllResult>('/items/check-all'),

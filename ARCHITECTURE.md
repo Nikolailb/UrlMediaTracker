@@ -6,7 +6,7 @@ Browser (React build) → KeiHub Caddy same-origin route → FastAPI → SQLite.
 
 Local authentication uses password hashes, one-use invites, and revocable sessions in SQLite. The browser has an HTTP-only cookie; every item query derives account and session safe-view state server-side. An admin must explicitly select another account. CSRF tokens protect mutations. `user_id` query parameters are not an authorization mechanism.
 
-Saved filter presets belong to the selected library account and are managed through authorized API routes. Three built-ins are supplied by the server; custom preset definitions are small SQLite rows. The browser applies their category/unread/active criteria to the authorized item list in either view. Safe view is enforced by the API before filtering, so no preset can expose hidden entries.
+Saved filter presets belong to the selected library account and are managed through authorized API routes. Three built-ins are supplied by the server; custom preset definitions are small SQLite rows. The browser applies their category/unread/active and sort criteria to the authorized item list in either view. Safe view is enforced by the API before filtering, so no preset can expose hidden entries. Desktop chips wrap; phones use a preset modal.
 
 ## Checking boundary
 

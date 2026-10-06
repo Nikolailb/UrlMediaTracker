@@ -4,10 +4,7 @@ import { ItemProgress } from './ItemProgress'
 import { ItemActions } from './ItemActions'
 import { RelativeTime } from '@/components/ui/relative-time'
 import type { ItemRead } from '@/types/api'
-import { Button } from '@/components/ui/button'
-import { useMarkRead } from '@/hooks/useItems'
-import { itemsApi } from '@/api/items'
-import { toast } from 'sonner'
+import { ReadingActions } from './ReadingActions'
 import { useAuth } from '@/auth/context'
 
 interface ItemCardsProps {
@@ -18,22 +15,7 @@ interface ItemCardsProps {
 }
 
 export function ItemCards({ items, onEdit, onDelete, onHistory }: ItemCardsProps) {
-  const markRead = useMarkRead()
   const { selectedUser } = useAuth()
-  async function openNext(item: ItemRead) {
-    try {
-      const next = await itemsApi.next(item.id)
-      if (next.next_url) window.open(next.next_url, '_blank', 'noopener,noreferrer')
-      else toast.info(next.message)
-    } catch { toast.error('Could not open next chapter.') }
-  }
-  async function markNext(item: ItemRead) {
-    try {
-      const next = await itemsApi.next(item.id)
-      if (next.next_chapter) markRead.mutate({ id: item.id, data: { chapter: next.next_chapter } })
-      else toast.info(next.message)
-    } catch { toast.error('Could not mark next chapter.') }
-  }
   return (
     <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
       {items.map((item) => (
@@ -47,9 +29,9 @@ export function ItemCards({ items, onEdit, onDelete, onHistory }: ItemCardsProps
           <div className="flex min-w-0 flex-1 items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 min-w-0">
-                <span className="font-medium truncate text-sm">
+                <a href={item.toc_url ?? item.series_url ?? item.original_url} target="_blank" rel="noopener noreferrer" className="font-medium truncate text-sm hover:text-primary hover:underline underline-offset-2" title="Open series or table of contents">
                   {item.title ?? new URL(item.original_url).hostname}
-                </span>
+                </a>
                 {item.has_unread && (
                   <span className="h-2 w-2 shrink-0 rounded-full bg-primary animate-pulse" />
                 )}
@@ -73,7 +55,7 @@ export function ItemCards({ items, onEdit, onDelete, onHistory }: ItemCardsProps
           {item.note && <p className="text-xs text-muted-foreground line-clamp-2">{item.note}</p>}
           {item.pending_latest_chapter && <p className="text-xs text-amber-600">Chapter {item.pending_latest_chapter} needs review</p>}
           {item.last_outcome === 'FAILED' || item.last_outcome === 'BLOCKED' ? <p className="text-xs text-amber-600">Check issue: {item.last_error ?? item.last_outcome}</p> : null}
-          <div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => openNext(item)} disabled={!item.url_template}>Open next</Button><Button size="sm" variant="outline" onClick={() => markNext(item)} disabled={!item.has_unread || markRead.isPending}>Mark read</Button></div>
+          <ReadingActions item={item} />
 
           {/* Footer */}
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground pt-1 border-t border-border">

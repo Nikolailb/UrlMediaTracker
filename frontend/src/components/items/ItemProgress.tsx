@@ -13,13 +13,14 @@ interface ChapterLinkProps {
 
 function ChapterLink({ chapter, href }: ChapterLinkProps) {
   if (!chapter) return <span className="text-muted-foreground">—</span>;
-  if (!href) return <span>{chapter}</span>;
+  if (!href) return <span title="Chapter link unavailable: add a chapter URL pattern">{chapter}</span>;
   return (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="underline-offset-2 hover:underline hover:text-primary transition-colors"
+      className="transition-colors hover:text-primary hover:underline underline-offset-2"
+      title={`Open chapter ${chapter}`}
     >
       {chapter}
     </a>
@@ -30,7 +31,7 @@ function chapterUrl(
   template: string | null,
   chapter: string | null,
 ): string | null {
-  if (!template || !chapter) return null;
+  if (!template?.includes('{n}') || !chapter) return null;
   return template.replace("{n}", encodeURIComponent(chapter));
 }
 

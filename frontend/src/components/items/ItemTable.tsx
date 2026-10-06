@@ -5,6 +5,7 @@ import { ItemProgress } from './ItemProgress'
 import { ItemActions } from './ItemActions'
 import { RelativeTime } from '@/components/ui/relative-time'
 import type { ItemRead } from '@/types/api'
+import { ReadingActions } from './ReadingActions'
 
 type SortKey = 'title' | 'created_at' | 'latest_chapter_at' | 'last_checked_at' | 'has_unread'
 type SortDir = 'asc' | 'desc'
@@ -95,9 +96,9 @@ export function ItemTable({ items, sortKey, sortDir, onSort, onEdit, onDelete, o
               <td className="px-4 py-3">
                 <div className="flex flex-col gap-0.5 min-w-0">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="font-medium truncate max-w-[200px] sm:max-w-xs">
+                    <a href={item.toc_url ?? item.series_url ?? item.original_url} target="_blank" rel="noopener noreferrer" className="font-medium truncate max-w-[200px] sm:max-w-xs hover:text-primary hover:underline underline-offset-2" title="Open series or table of contents">
                       {item.title ?? new URL(item.original_url).hostname}
-                    </span>
+                    </a>
                     {item.has_unread && (
                       <span className="shrink-0 h-2 w-2 rounded-full bg-primary animate-pulse" />
                     )}
@@ -121,6 +122,7 @@ export function ItemTable({ items, sortKey, sortDir, onSort, onEdit, onDelete, o
                   <div className="md:hidden mt-1">
                     <ItemProgress item={item} />
                   </div>
+                  <ReadingActions item={item} compact />
                 </div>
               </td>
 
