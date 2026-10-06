@@ -9,7 +9,7 @@ Milestones are reviewable increments; mark complete only with acceptance evidenc
 | M1b — Source support | FreeWebNovel, add preview, site diagnostic, URL guard tests. | REQ-004, REQ-006, REQ-007 | Implemented locally; live source and redirect checks remain |
 | M2a — Auth | Schema, admin bootstrap, legacy owner migration, sessions, invites, API authorization. | REQ-001, REQ-002 | Implemented locally; live legacy migration remains |
 | M2b — Safe view | Flag, session default, server filtering, leak tests. | REQ-003 | Implemented locally; API tests pass |
-| M3a — Queue | Issue feedback and card/table switch. | REQ-009, REQ-013 | Implemented locally; browser test showed filtered table/card switching and safe-view counts |
+| M3a — Queue | Issue feedback, card/table switch, and centered wide-screen content. | REQ-009, REQ-013 | Implemented locally; browser checks showed filtered table/card switching, safe-view counts, and centered content at 1920 px without overflow at 1280 px |
 | M3c — Filter presets | Desktop wrapping chips, phone preset picker, three built-ins, full Filters modal preset state, authorized custom preset CRUD, and archive portability. | REQ-009, REQ-011, REQ-012 | Implemented locally; API tests, desktop and 360 px browser checks, frontend lint/build pass. User preview and production deployment remain |
 | M3b — Media/mobile | Notes, covers, open-next/mark-read actions, viewport checks. | REQ-010, REQ-011 | Implemented locally; phone-width browser tests showed no page overflow and mark-read progress through click and Enter key |
 | M4a — Portability | Versioned ZIP, legacy JSON compatibility, round-trip tests. | REQ-012 | Implemented locally; ZIP dedup, invalid-archive atomicity, and sensitive cover round-trip tests pass with Pillow |

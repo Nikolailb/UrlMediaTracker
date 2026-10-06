@@ -34,3 +34,6 @@ Initial choice: a compact picker instead of a horizontally scrolling category ch
 
 ## D-011 — Preset and reading controls revised after preview (2026-10-05)
 Desktop presets use wrapping chips; phones open a compact preset picker. The Filters control opens a modal that holds the criteria and Save/Update actions together. Save captures categories, unread and active flags, and sort key/direction, while search and safe view remain outside presets. Titles open the ToC or series; chapter numbers link only when a specific URL can be built and use the same default and hover styling as title links. Cover URLs are fetched through the same public-address and redirect guard as other source requests, then normalized into local storage. A dropdown-only preset control and a separate criteria editor were rejected after user review. REQ-009–REQ-011.
+
+## D-012 — Centered wide-screen content (2026-10-06)
+Cap the reading queue's main content at 96 rem and center it on wider screens. Keep the header full width. The previous 110 rem limit spread table columns too far apart at 1920 px; a narrower limit still leaves room for the table and wrapping presets. REQ-009.
