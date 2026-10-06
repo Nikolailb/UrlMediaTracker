@@ -155,7 +155,7 @@ async def import_archive(identity: IdentityDep, db: DbDep, file: UploadFile = Fi
             values["user_id"] = identity.library_user_id
             values["pattern_source"] = values.get("pattern_source") or "AUTO"
             values["check_strategy"] = values.get("check_strategy") or "INCREMENTAL_PROBE"
-            values["check_interval_min"] = int(values.get("check_interval_min") or 60)
+            values["check_interval_min"] = int(values.get("check_interval_min") or 360)
             values["is_active"] = bool(values.get("is_active", True))
             values["is_sensitive"] = bool(values.get("is_sensitive", False))
             if image:

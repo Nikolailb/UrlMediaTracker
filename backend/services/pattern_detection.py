@@ -109,6 +109,18 @@ def build_chapter_url(url_template: str, chapter: str | int | float) -> str:
     return url_template.replace("{n}", str(chapter))
 
 
+def unsafe_chapter_template(url_template: str | None) -> bool:
+    """A single placeholder cannot advance separate path and query chapter IDs."""
+    if not url_template:
+        return False
+    parts = urlparse(url_template)
+    path_has_chapter = bool(_KEYWORD_RE.search(parts.path) or
+                            re.search(r"(?:chapter|chap|ch|episode|ep)[-_.]?\{n\}", parts.path, re.I))
+    query_has_chapter = any(name in parse_qs(parts.query) for name in
+                            {"episode_no", "chapter_no", "ep_no", "episode", "chapter", "ep", "ch"})
+    return path_has_chapter and query_has_chapter
+
+
 def extract_chapter_from_url(url: str, chapter_regex: str) -> str | None:
     """
     Extract the chapter identifier from *url* using *chapter_regex* (group 1).
@@ -133,6 +145,8 @@ def _apply_manual_regex(url: str, pattern: str) -> PatternDetectionResult:
         compiled = re.compile(pattern, re.IGNORECASE)
     except re.error as exc:
         raise ValueError(f"Invalid regex pattern: {exc}") from exc
+    if compiled.groups != 1:
+        raise ValueError("Chapter regex needs exactly one capture group.")
 
     m = compiled.search(url)
     if not m or not m.lastindex:
@@ -150,7 +164,7 @@ def _apply_manual_regex(url: str, pattern: str) -> PatternDetectionResult:
     path = urlparse(url).path
     path_start = url.find(path)
     match_start = m.start() - path_start
-    if path_start >= 0 and 0 <= match_start < len(path) and _has_separate_numeric_id(path, match_start):
+    if (path_start >= 0 and 0 <= match_start < len(path) and _has_separate_numeric_id(path, match_start)):
         return PatternDetectionResult(
             url_template=None,
             chapter_regex=pattern,
@@ -160,6 +174,15 @@ def _apply_manual_regex(url: str, pattern: str) -> PatternDetectionResult:
             pattern_source="MANUAL",
         )
     template = url[:g1_start] + "{n}" + url[g1_end:]
+    if unsafe_chapter_template(template):
+        return PatternDetectionResult(
+            url_template=None,
+            chapter_regex=pattern,
+            current_chapter=m.group(1),
+            confidence=PatternConfidence.LOW,
+            strategy_used="ambiguous_id",
+            pattern_source="MANUAL",
+        )
     return PatternDetectionResult(
         url_template=template,
         chapter_regex=pattern,
@@ -172,6 +195,19 @@ def _apply_manual_regex(url: str, pattern: str) -> PatternDetectionResult:
 
 def _auto_detect(url: str) -> PatternDetectionResult:
     parsed = urlparse(url)
+
+    # A path chapter number and a separate chapter-like query value can move
+    # independently. Keep the path number as a hint, but withhold probing.
+    if unsafe_chapter_template(url):
+        visible = _try_keyword_match(url, parsed.path)
+        return PatternDetectionResult(
+            url_template=None,
+            chapter_regex=visible.chapter_regex if visible else None,
+            current_chapter=visible.current_chapter if visible else None,
+            confidence=PatternConfidence.LOW,
+            strategy_used="ambiguous_id",
+            pattern_source="AUTO",
+        )
 
     # Prioritize explicit ID parameters used by some readers where the path
     # is only a slug/canonical title that can redirect.

@@ -16,7 +16,7 @@ from models.item import CheckStrategy, TrackedItem
 from schemas.item import ItemCreate, ItemRead, ItemUpdate, MarkReadRequest, NextChapterResponse
 from services.auth import Identity, IdentityDep, owner_id
 from services.checking.orchestrator import MANUAL_CHECK_COOLDOWN_SECONDS, _last_manual_check, check_item
-from services.pattern_detection import build_chapter_url, detect_pattern
+from services.pattern_detection import build_chapter_url, detect_pattern, unsafe_chapter_template
 from services.checking.http import UnsafeSource, safe_get
 from services.checking.sites.freewebnovel import series_url as freewebnovel_series_url, chapter_template as freewebnovel_template
 from services.checking.sites.comix import series_url as comix_series_url
@@ -92,8 +92,6 @@ async def create_item(payload: ItemCreate, db: DbDep, identity: IdentityDep):
         strategy_override=payload.strategy_override,
         check_strategy=(CheckStrategy.TOC_THEN_PROBE if toc_url else CheckStrategy.INCREMENTAL_PROBE),
     )
-    if item.is_sensitive and identity.session.safe_view_enabled:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Reveal sensitive entries before creating one.")
     db.add(item)
     db.commit()
     item.cover_filename = await fetch_cover(series_url or payload.url)
@@ -130,9 +128,12 @@ def get_item(item_id: str, db: DbDep, identity: IdentityDep):
 @router.patch("/{item_id}", response_model=ItemRead)
 def update_item(item_id: str, payload: ItemUpdate, db: DbDep, identity: IdentityDep):
     item = _get_or_404(item_id, db, identity)
+    before_detection = (
+        item.url_template, item.chapter_regex, item.pattern_source, item.toc_url,
+        item.strategy_override, item.check_strategy, item.preferred_group,
+        item.toc_examples_json, item.toc_row_class,
+    )
     data = payload.model_dump(exclude_unset=True)
-    if data.get("is_sensitive") and identity.session.safe_view_enabled:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Reveal sensitive entries before marking one sensitive.")
     manual_regex = data.pop("manual_regex", None)
     chapter_example = data.pop("chapter_url", None)
     example_urls = data.pop("toc_example_urls", None)
@@ -153,14 +154,13 @@ def update_item(item_id: str, payload: ItemUpdate, db: DbDep, identity: Identity
         item.pattern_source = detection.pattern_source
     elif manual_regex:
         example = (item.url_template.replace("{n}", item.latest_chapter or item.current_chapter or "1")
-                   if item.url_template else item.original_url)
+                   if item.url_template else (parse_toc_examples(item.toc_examples_json) or [item.original_url])[0])
         try:
             detection = detect_pattern(example, manual_regex)
         except ValueError as exc:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
-        if not detection.url_template:
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                                "Regex did not produce a reusable link. Provide a chapter URL example.")
+        # REQ-016: a manual regex can identify real ToC links without a safe
+        # one-placeholder URL template for sequential probing.
         item.url_template = detection.url_template
         item.chapter_regex = detection.chapter_regex
         item.pattern_source = detection.pattern_source
@@ -176,10 +176,28 @@ def update_item(item_id: str, payload: ItemUpdate, db: DbDep, identity: Identity
         item.latest_chapter_url = None
     for key, value in data.items():
         setattr(item, key, value)
+    after_detection = (
+        item.url_template, item.chapter_regex, item.pattern_source, item.toc_url,
+        item.strategy_override, item.check_strategy, item.preferred_group,
+        item.toc_examples_json, item.toc_row_class,
+    )
+    if after_detection != before_detection:
+        # REQ-005/016: an old failure is about the previous checker settings.
+        # The next scheduled or explicit check will produce the new status.
+        item.last_outcome = None
+        item.last_error = None
+        item.consecutive_failures = 0
+        item.last_checked_at = None
+        item.pending_latest_chapter = None
+        item.pending_chapter_url = None
+        item.dismissed_candidate = None
+        if item.toc_url != before_detection[3] or item.toc_examples_json != before_detection[7] or item.toc_row_class != before_detection[8]:
+            item.toc_latest_page_url = None
+        _last_manual_check.pop(item.id, None)
     item.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(item)
-    return _to_read(item)
+    return _to_read(item).model_copy(update={"check_config_changed": after_detection != before_detection})
 
 
 @router.delete("/{item_id}", status_code=204)
@@ -276,7 +294,7 @@ def get_next_chapter(item_id: str, db: DbDep, identity: IdentityDep):
     except ValueError:
         return NextChapterResponse(item_id=item_id, next_chapter=None, next_url=toc,
                                    message="Exact chapter unknown; opening the ToC.", destination="TOC")
-    if item.url_template and "{n}" in item.url_template:
+    if item.url_template and "{n}" in item.url_template and not unsafe_chapter_template(item.url_template):
         return NextChapterResponse(item_id=item_id, next_chapter=next_num,
                                    next_url=build_chapter_url(item.url_template, next_num),
                                    message="Next chapter URL generated.", destination="CHAPTER")
@@ -355,6 +373,8 @@ def resolve_pending(item_id: str, chapter: Annotated[str, Body(embed=True)], db:
     item.pending_chapter_url = None
     item.latest_chapter_at = datetime.now(timezone.utc)
     item.last_outcome = "RESOLVED"
+    item.last_error = None
+    item.consecutive_failures = 0
     db.commit()
     db.refresh(item)
     return _to_read(item)
@@ -424,7 +444,7 @@ def import_items(records: Annotated[list[dict], Body()], db: DbDep, identity: Id
                            toc_url=rec.get("toc_url"), category=rec.get("category"),
                            current_chapter=rec.get("current_chapter"),
                            latest_chapter=rec.get("latest_chapter"),
-                           check_interval_min=int(rec.get("check_interval_min") or 60),
+                           check_interval_min=int(rec.get("check_interval_min") or 360),
                            is_active=bool(rec.get("is_active", True)),
                            is_sensitive=bool(rec.get("is_sensitive", False)), note=rec.get("note"))
         pending.append(item)

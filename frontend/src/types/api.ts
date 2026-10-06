@@ -53,6 +53,7 @@ export interface ItemRead {
   updated_at: string
   user_id: string | null
   has_unread: boolean | null
+  check_config_changed: boolean
 }
 
 export interface ItemCreate {

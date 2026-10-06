@@ -1,5 +1,6 @@
 import { chapterToFloat } from "@/lib/utils";
 import type { ItemRead } from "@/types/api";
+import { hasAmbiguousChapterIds } from '@/lib/chapterUrls'
 
 interface ItemProgressProps {
   item: ItemRead;
@@ -32,6 +33,7 @@ function chapterUrl(
   chapter: string | null,
 ): string | null {
   if (!template?.includes('{n}') || !chapter) return null;
+  if (hasAmbiguousChapterIds(template)) return null;
   return template.replace("{n}", encodeURIComponent(chapter));
 }
 

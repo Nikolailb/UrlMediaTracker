@@ -15,9 +15,9 @@ The admin creates one-use invites expiring in 24 hours; recipients choose passwo
 Acceptance: expired/reused invites fail; unauthenticated item and user APIs fail; only admin can invite or manage users; logout revokes the session.
 
 ### REQ-003 — Sensitive entries and safe view
-An item has one `is_sensitive` flag. Safe view starts on every new session and can be deliberately changed for that session. While on, sensitive entries are absent from ordinary list, card, search, count, activity, preview, file, and direct item APIs, including admin views. Full account export is a separate password-confirmed action that explicitly includes sensitive entries.
+An item has one `is_sensitive` flag. Safe view starts on every new session and can be deliberately changed for that session. A user may create an entry as sensitive or mark a visible entry sensitive while safe view is on; it disappears from normal reads immediately after saving. While on, sensitive entries are absent from ordinary list, card, search, count, activity, preview, file, and direct item APIs, including admin views. Full account export is a separate password-confirmed action that explicitly includes sensitive entries.
 
-Acceptance: title, URL, note, cover, and counts cannot leak through normal APIs while safe view is on; authorized reveal works; a new session starts safe.
+Acceptance: create and mark-sensitive mutations succeed while safe view is on, but subsequent list, item, cover, and activity reads do not expose the entry until reveal. A new session starts safe.
 
 ## Source checking
 
@@ -26,10 +26,14 @@ Preview inferred title, chapter, cover candidate, accessibility, and checker bef
 
 Acceptance: both URL forms create entries; a ToC-first entry with a chapter-55 example stores the first URL as ToC and a chapter template from the example, with empty progress/latest unless explicitly entered; editing a ToC-first item with a chapter example replaces its checking pattern while preserving ToC and progress; invalid example URLs are rejected. A URL with a separate opaque numeric ID before `chapter-63` is flagged as non-sequential rather than creating a false probe template, including with a manual regex. The UI explains that such links need a site-specific checker for automatic updates. Detection does not silently overwrite edited fields; saved latest chapter matches the review field; the first step asks for no regex; a FreeWebNovel series URL displays no missing-pattern warning; inaccessible source warns without blocking; private-network fetch targets are rejected, including redirected targets.
 
+The default check interval for newly created items is 360 minutes; existing saved intervals are preserved. The chapter URL example is optional for ToC and site-specific checkers. A manual chapter URL regex guides generic ToC link extraction even when it cannot produce a safe sequential URL template. If an example cannot produce such a template, saving must say so without implying the regex is unusable for ToC scanning.
+
 ### REQ-005 — Checker selection and outcomes
 Prefer a matching site-specific checker, then a compatible generic ToC or URL checker. Permit item-level override during addition and editing, and display the method. Return distinct new, unchanged, unsupported, blocked, and failed outcomes. Unchanged or blocked never triggers a generic probe.
 
 Acceptance: fixture tests cover each outcome and override; unchanged ToC and unrelated links never advance the chapter.
+
+The ToC test action must use the method currently selected in Add or Edit, including an explicit generic ToC override on a known site. When checker settings change, clear the previous method's displayed issue and run one check with the new method when the item is active. Report its success, pending result, or actual failure to the user. An unchanged checker configuration does not erase a genuine current issue.
 
 ### REQ-006 — Site-access diagnostic
 Provide a test in the add flow and a separate URL tool. Distinguish likely Cloudflare challenge, ordinary HTTP error, timeout, reachable, and inconclusive. Bound requests by timeout, response size, redirects, and public-address checks. Do not claim guaranteed future access.
@@ -45,6 +49,8 @@ Acceptance: a saved fixture for the supplied Harem System series reports Chapter
 An automatic numeric increase greater than both 50 chapters and 25% of the prior latest becomes a pending result for owner review. Incomparable chapter labels also require review. The owner can accept or correct it.
 
 Acceptance: 644-to-5682 is held, one-chapter increase applies, and pending/review actions appear in the app and history.
+
+Accepting a pending chapter changes the latest-chapter baseline. It does not permanently trust a checker or site: later increases below the numeric threshold apply automatically, while another suspicious jump requires review. A valid pending result or accepted correction clears an older check error.
 
 ## Daily use and portability
 
@@ -88,3 +94,7 @@ Acceptance: both configuration values are empty by default; tests show blocked o
 Generic ToC checks extract chapter labels and actual series-scoped links without requiring a URL template. Collapse duplicate chapter numbers across groups; an optional preferred group chooses the reading link, while the highest chapter across all groups determines update status. Validate pagination order using a bounded first/last-page check when pagination is explicit, then read only the confirmed latest page routinely. The Comix adapter reads series-scoped initial page data and may use the explicitly allowlisted browser transport for rendered group links. A preview shows method, confidence, latest, samples, groups, and warnings; two example links and an optional chapter-row HTML snippet can guide an uncertain generic extraction. Never probe after an ambiguous, blocked, empty, contradictory, or truncated ToC result. Store verified latest links. Open next uses an exact link when known and otherwise opens the ToC without changing progress.
 
 Acceptance: saved fixtures cover ordinary and paginated ToCs, unrelated links, duplicate groups, Comix metadata/rendering, changed layouts, truncation, and failures; duplicates do not create updates, opaque IDs are never synthesized, group preference does not change the latest count, and no uncertain result becomes unchanged. Preview and item APIs enforce login, ownership, and safe view. Migration preserves existing items; ZIP round-trip preserves new fields. The mobile and desktop reading actions use a known direct URL or clearly identified ToC fallback.
+
+For Comix, a generic ToC override reports that the direct HTML has no chapter anchors and offers a one-click switch to the dedicated Comix checker. Optional example links do not cause the generic checker to claim an OK result when its source page contains no matching links.
+
+The generic ToC scanner must not contain host-specific branches. It may recognize common terminal list paths, scope links by series path, reject conflicting shared query values, and use an optional one-group chapter URL regex to extract chapter numbers. An invalid or contradictory regex result is an issue, never unchanged. A chapter URL with separate path and query chapter identifiers must not become a one-placeholder probe template; older saved templates with that ambiguity must not be probed or used by Open next. A descending first page can establish the latest chapter without fetching older pages. The Webtoons regression fixture with visible Episode 393 and `episode_no=412` must report chapter 393 and its exact link, excluding another title's links. A site-neutral fixture whose links require `release-(\d+)` must be EMPTY without the override and succeed with it.

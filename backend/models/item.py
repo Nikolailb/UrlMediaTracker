@@ -91,7 +91,7 @@ class TrackedItem(Base):
     # Error message from the most recent failed check (nullable)
     last_error: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
-    check_interval_min: Mapped[int] = mapped_column(Integer, default=60, nullable=False)
+    check_interval_min: Mapped[int] = mapped_column(Integer, default=360, nullable=False)
     last_checked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

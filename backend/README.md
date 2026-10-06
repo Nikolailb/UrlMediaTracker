@@ -26,7 +26,7 @@ Copy `.env.example` to `.env` and adjust as needed:
 
 ```env
 DATABASE_URL=sqlite:///./tracker.db
-DEFAULT_CHECK_INTERVAL_MIN=60
+DEFAULT_CHECK_INTERVAL_MIN=360
 PROBE_REQUEST_TIMEOUT=10.0
 PROBE_DELAY_SECONDS=1.0
 MAX_PROBE_AHEAD=10

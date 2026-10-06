@@ -15,7 +15,7 @@ class ItemCreate(BaseModel):
         default=None,
         validation_alias=AliasChoices("manual_regex", "custom_regex"),
     )
-    check_interval_min: int = 60
+    check_interval_min: int = 360
     toc_url: str | None = None
     category: ItemCategory | None = None
     is_sensitive: bool = False
@@ -115,6 +115,7 @@ class ItemRead(BaseModel):
     updated_at: datetime
     user_id: str | None
     has_unread: bool | None = None
+    check_config_changed: bool = False
 
     model_config = {"from_attributes": True}
 

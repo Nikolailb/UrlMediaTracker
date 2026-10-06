@@ -28,6 +28,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/auth/context'
 import { usePatternDetect } from '@/hooks/usePatternDetect'
 import { TocExtractionPanel } from './TocExtractionPanel'
+import { hasAmbiguousChapterIds } from '@/lib/chapterUrls'
 
 interface EditItemDialogProps {
   item: ItemRead | null;
@@ -68,7 +69,7 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
   const [title, setTitle] = useState(item?.title ?? "");
   const [manualRegex, setManualRegex] = useState(item?.pattern_source === 'MANUAL' ? item.chapter_regex ?? '' : '');
   const [interval, setInterval] = useState(
-    String(item?.check_interval_min ?? 60),
+    String(item?.check_interval_min ?? 360),
   );
   const [currentChapter, setCurrentChapter] = useState(
     item?.current_chapter ?? "",
@@ -78,6 +79,7 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
   const [chapterExampleUrl, setChapterExampleUrl] = useState("");
   const [tocExamples, setTocExamples] = useState<string[]>(item?.toc_example_urls ?? ['', '']);
   const [tocRowHtml, setTocRowHtml] = useState('');
+  const [clearRowHint, setClearRowHint] = useState(false);
   const [preferredGroup, setPreferredGroup] = useState(item?.preferred_group ?? '');
   const [category, setCategory] = useState(item?.category ?? "");
   const [checkStrategy, setCheckStrategy] = useState<string>(
@@ -91,21 +93,21 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
   const [coverFilename, setCoverFilename] = useState(item?.cover_filename ?? null)
   const [coverBusy, setCoverBusy] = useState(false)
   const qc = useQueryClient()
-  const { selectedUser } = useAuth()
+  const { selectedUser, session } = useAuth()
 
   const update = useUpdateItem();
   const patternPreview = usePatternDetect();
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!item) return;
-    update.mutate(
-      {
+    try {
+      const saved = await update.mutateAsync({
         id: item.id,
         data: {
           title: title.trim() || null,
           chapter_url: chapterExampleUrl.trim() || undefined,
           manual_regex: manualRegex.trim() || null,
-          check_interval_min: parseInt(interval) || 60,
+          check_interval_min: parseInt(interval) || 360,
           current_chapter: currentChapter.trim() || null,
           is_active: isActive,
           toc_url: tocUrl.trim() || null,
@@ -113,20 +115,42 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
           strategy_override: checkStrategy === 'AUTO' ? null : checkStrategy,
           preferred_group: preferredGroup || null,
           toc_example_urls: tocExamples.map((entry) => entry.trim()).filter(Boolean),
-          toc_row_html: tocRowHtml.trim() || undefined,
+          toc_row_html: tocRowHtml.trim() || (clearRowHint ? '' : undefined),
           note: note.trim() || null,
           is_sensitive: isSensitive,
           latest_chapter: (latestChapter.trim() || null) !== item.latest_chapter ? (latestChapter.trim() || null) : undefined,
         },
-      },
-      {
-        onSuccess: () => {
-          toast.success("Item updated.");
-          onOpenChange(false);
-        },
-        onError: (err) => toast.error(err.message),
-      },
-    );
+      });
+      onOpenChange(false);
+      if (saved.is_sensitive && session?.safe_view_enabled) {
+        toast.success('Item saved and hidden by safe view. Reveal sensitive entries to see it.');
+        return;
+      }
+      if (chapterExampleUrl.trim() && !saved.url_template && !saved.series_url) {
+        toast.warning('No reusable chapter URL pattern was found. Use a working ToC scan or track manually.');
+      }
+      if (!saved.check_config_changed) {
+        toast.success('Item updated. Checking method is unchanged.');
+        return;
+      }
+      if (!saved.is_active) {
+        toast.success('Checking settings saved. This item is paused.');
+        return;
+      }
+      toast.info(`Checking settings saved. Testing ${saved.strategy_override ?? 'automatic'} now…`);
+      try {
+        const checked = await itemsApi.check(saved.id);
+        await qc.invalidateQueries({ queryKey: ['items'] });
+        if (checked.outcome === 'PENDING') toast.warning(`Check found chapter ${checked.pending_chapter}; review it before accepting.`);
+        else if (checked.new_latest_chapter) toast.success(`Checker works. Found chapter ${checked.new_latest_chapter}.`);
+        else if (checked.success) toast.success('Checker works. No new chapter.');
+        else toast.warning(`Saved, but the new check failed: ${checked.error_message ?? checked.outcome ?? 'unknown issue'}`);
+      } catch (error) {
+        toast.warning(`Checking settings saved, but the check could not run: ${error instanceof Error ? error.message : 'unknown issue'}`);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not save item.');
+    }
   }
 
   return (
@@ -307,7 +331,7 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
                   }}
                 />
                 <p className="text-[11px] text-muted-foreground leading-snug">
-                  Use a real chapter link when the ToC URL does not reveal a chapter pattern. The example replaces the checking pattern, not your progress or latest chapter.
+                  Optional for sequential URL probing. A site checker or ToC scan can work without it. An example cannot make a ToC page with no chapter links scannable.
                 </p>
                 <Button
                   type="button"
@@ -324,8 +348,8 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
                       <p className="break-all">Detected URL template: <span className="font-mono">{patternPreview.data.url_template}</span></p>
                     ) : (
                       <p className="text-amber-400">
-                        {patternPreview.data.strategy_used === 'opaque_id'
-                          ? 'This URL has a separate numeric ID before the chapter number. Sequential probing cannot predict the next URL; a ToC scan may find real links.'
+                        {['opaque_id', 'ambiguous_id'].includes(patternPreview.data.strategy_used)
+                          ? 'This URL has another numeric ID. Sequential probing cannot predict the next URL; a ToC scan can use your regex and actual links.'
                           : 'No reusable chapter URL pattern was found. You can save the item for manual tracking.'}
                       </p>
                     )}
@@ -333,7 +357,11 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
                 )}
                 {patternPreview.isError && <p className="text-xs text-destructive">Could not detect a pattern. Check the URL and regex.</p>}
                 {!chapterExampleUrl && item?.url_template && (
-                  <p className="text-[11px] text-muted-foreground break-all">Saved URL template: <span className="font-mono">{item.url_template}</span></p>
+                  <div className="text-[11px] text-muted-foreground break-all">
+                    <p>Saved URL template: <span className="font-mono">{item.url_template}</span></p>
+                    {hasAmbiguousChapterIds(item.url_template) &&
+                      <p className="text-amber-500">This URL has separate path and query chapter values, so its template is ignored for probing. Your chapter regex still guides the ToC scan.</p>}
+                  </div>
                 )}
               </div>
 
@@ -358,9 +386,12 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
                   <p className="text-[11px] text-muted-foreground break-all">Saved detected regex: <span className="font-mono">{item.chapter_regex}</span></p>
                 )}
               </div>
-              <TocExtractionPanel tocUrl={tocUrl.trim() || item?.series_url || item?.original_url || ''}
+              <TocExtractionPanel key={`${checkStrategy}:${tocUrl.trim() || item?.series_url || item?.original_url || ''}:${manualRegex}`} tocUrl={tocUrl.trim() || item?.series_url || item?.original_url || ''}
+                strategyOverride={checkStrategy} chapterRegex={manualRegex} onStrategyChange={setCheckStrategy}
                 exampleUrls={tocExamples} setExampleUrls={setTocExamples}
                 rowHtml={tocRowHtml} setRowHtml={setTocRowHtml}
+                savedRowClass={clearRowHint ? null : item?.toc_row_class}
+                onClearRowClass={() => { setClearRowHint(true); setTocRowHtml('') }}
                   preferredGroup={preferredGroup} setPreferredGroup={setPreferredGroup} />
             </div>
           )}

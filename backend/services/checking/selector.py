@@ -11,7 +11,7 @@ from services.checking.sites.freewebnovel import (
     chapter_template as freewebnovel_template,
     parse_freewebnovel,
 )
-from services.checking.strategies.toc import parse_toc, _rank
+from services.checking.strategies.toc import parse_toc, _rank, query_identity_conflicts
 from services.checking.strategies.toc import parse_toc_examples
 from services.checking.sites.comix import series_url as comix_series_url, parse_comix, merge_rendered_group
 from services.checking.browser import browser_enabled_for, browser_get, BrowserFetchError
@@ -73,13 +73,15 @@ def _from_extraction(found: Extraction, previous: str | None) -> CheckResult:
 
 async def extract_toc(url: str, *, examples: list[str] | None = None,
                       row_class: str | None = None, preferred_group: str | None = None,
-                      confirmed_latest_page_url: str | None = None) -> Extraction:
+                      confirmed_latest_page_url: str | None = None,
+                      chapter_regex: str | None = None) -> Extraction:
     """Fetch and parse at most the first and explicit last HTML page."""
     if confirmed_latest_page_url:
         source = urlsplit(url)
         confirmed = urlsplit(confirmed_latest_page_url)
         if (confirmed.scheme != source.scheme or confirmed.hostname != source.hostname or
                 confirmed.path.rstrip("/") != source.path.rstrip("/") or
+                query_identity_conflicts(source.query, confirmed.query) or
                 (confirmed_latest_page_url != url and not parse_qs(confirmed.query).get("page"))):
             return Extraction("CONTRADICTORY", "TOC_SCRAPER", warnings=["Saved ToC page does not match the source."])
     status, final_url, body, headers = await _checker_get(confirmed_latest_page_url or url, purpose="TOC_SCRAPER")
@@ -90,7 +92,8 @@ async def extract_toc(url: str, *, examples: list[str] | None = None,
     if len(body) >= 512_001:
         return Extraction("TRUNCATED", "TOC_SCRAPER", warnings=["ToC exceeded the 512 KiB limit."])
     first = parse_toc(body.decode("utf-8", "replace"), final_url, examples=examples,
-                      row_class=row_class, preferred_group=preferred_group)
+                      row_class=row_class, preferred_group=preferred_group,
+                      chapter_regex=chapter_regex)
     if first.state != "OK":
         return first
     first.checked_page_url = final_url
@@ -119,7 +122,8 @@ async def extract_toc(url: str, *, examples: list[str] | None = None,
         return Extraction("TRUNCATED" if len(body) >= 512_001 else "HTTP_ERROR", "TOC_SCRAPER",
                           warnings=["Last ToC page could not be read."])
     last = parse_toc(body.decode("utf-8", "replace"), final_url, examples=examples,
-                     row_class=row_class, preferred_group=preferred_group)
+                     row_class=row_class, preferred_group=preferred_group,
+                     chapter_regex=chapter_regex)
     if last.state != "OK" or not last.latest or not first.latest:
         return Extraction("CHANGED_LAYOUT", "TOC_SCRAPER", warnings=["Last ToC page did not contain matching chapters."])
     if _rank(last.latest.chapter) < _rank(first.latest.chapter):
@@ -135,6 +139,10 @@ async def check_source(item, config) -> CheckResult:
     series = freewebnovel_series_url(item.series_url or item.original_url)
     comix = comix_series_url(item.series_url or item.original_url)
     override = item.strategy_override
+    if override == "COMIX" and not comix:
+        return CheckResult("UNSUPPORTED", "COMIX", detail="Comix checker requires a Comix series URL")
+    if override == "FREEWEBNOVEL" and not series:
+        return CheckResult("UNSUPPORTED", "FREEWEBNOVEL", detail="FreeWebNovel checker requires a FreeWebNovel series URL")
     if series and override in {None, "FREEWEBNOVEL"}:
         try:
             status, _, body, headers = await _checker_get(series, purpose="SITE_SCRAPER")
@@ -185,7 +193,9 @@ async def check_source(item, config) -> CheckResult:
                 found = await extract_toc(item.toc_url, examples=parse_toc_examples(getattr(item, "toc_examples_json", None)),
                                           row_class=getattr(item, "toc_row_class", None),
                                           preferred_group=getattr(item, "preferred_group", None),
-                                          confirmed_latest_page_url=getattr(item, "toc_latest_page_url", None))
+                                          confirmed_latest_page_url=getattr(item, "toc_latest_page_url", None),
+                                          chapter_regex=(getattr(item, "chapter_regex", None)
+                                                         if getattr(item, "pattern_source", None) == "MANUAL" else None))
                 if found.state == "BLOCKED":
                     return CheckResult("BLOCKED", "TOC_SCRAPER", detail="; ".join(found.warnings))
                 return _from_extraction(found, item.latest_chapter or item.current_chapter)
@@ -194,6 +204,10 @@ async def check_source(item, config) -> CheckResult:
         if method == "TOC_SCRAPER" or result.outcome != "UNSUPPORTED":
             return result
 
+    from services.pattern_detection import unsafe_chapter_template
+    if unsafe_chapter_template(item.url_template):
+        return CheckResult("UNSUPPORTED", "INCREMENTAL_PROBE",
+                           detail="The URL has separate path and query chapter values; use ToC links instead of URL probing")
     if not item.url_template:
         return CheckResult("UNSUPPORTED", "INCREMENTAL_PROBE", detail="No chapter URL template")
     try:

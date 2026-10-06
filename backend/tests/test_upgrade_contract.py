@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from models.base import Base
 from models.item import TrackedItem
 from models.user import LoginSession, User
-from routers.items import _visible_query
+from routers.items import _visible_query, resolve_pending
 from services.auth import Identity
 from services.checking import selector as site_checker, http as source_http
 from services.checking.selector import CheckResult, freewebnovel_series_url, parse_freewebnovel
@@ -145,7 +145,8 @@ def test_suspicious_increase_is_held(monkeypatch):
         db.add(owner)
         db.flush()
         item = TrackedItem(original_url=EXAMPLE, series_url=EXAMPLE, user_id=owner.id,
-                           latest_chapter="644", current_chapter="640")
+                           latest_chapter="644", current_chapter="640",
+                           last_error="Previous check failed", consecutive_failures=2)
         db.add(item)
         db.commit()
         async def fake_check(_item, _config):
@@ -155,6 +156,18 @@ def test_suspicious_increase_is_held(monkeypatch):
         assert log.outcome == "PENDING"
         assert item.latest_chapter == "644"
         assert item.pending_latest_chapter == "5682"
+        assert item.last_error is None
+        assert item.consecutive_failures == 0
+        resolved = resolve_pending(item.id, "5682", db, Identity(owner, LoginSession(safe_view_enabled=False), owner.id))
+        assert resolved.latest_chapter == "5682"
+        assert resolved.last_error is None
+        async def next_check(_item, _config):
+            return CheckResult("NEW", "FREEWEBNOVEL", "5683", EXAMPLE + "/chapter-5683")
+        monkeypatch.setattr(site_checker, "check_source", next_check)
+        next_log = asyncio.run(check_item(item, db, CheckerConfig()))
+        assert next_log.outcome == "NEW"
+        assert item.pending_latest_chapter is None
+        assert item.latest_chapter == "5683"
 
 
 def test_incomparable_label_is_held_for_review(monkeypatch):
@@ -208,7 +221,6 @@ def test_api_account_isolation_and_safe_view(monkeypatch):
         assert client.get(f"/items/{foreign_id}").status_code == 404
         assert client.get(f"/items/{sensitive_id}").status_code == 404
         assert client.patch(f"/items/{foreign_id}", json={"title": "stolen"}, headers={"X-CSRF-Token": csrf}).status_code == 404
-        assert client.patch(f"/items/{own_id}", json={"is_sensitive": True}, headers={"X-CSRF-Token": csrf}).status_code == 409
         assert client.get(f"/items/{sensitive_id}/history").status_code == 404
         assert client.get(f"/items/{sensitive_id}/cover").status_code == 404
         assert client.get(f"/items/{sensitive_id}/next").status_code == 404
@@ -246,6 +258,40 @@ def test_api_account_isolation_and_safe_view(monkeypatch):
         again = client.post("/auth/login", json={"username": "alice", "password": "alice-long-password"})
         assert again.json()["safe_view_enabled"] is True
         assert len(client.get("/items").json()) == 1
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_detection_save_clears_old_issue_and_reports_changed_method(monkeypatch):
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    def session_factory(): return Session(engine)
+    def test_db():
+        with session_factory() as db: yield db
+    monkeypatch.setattr(main, "SessionLocal", session_factory)
+    main.app.dependency_overrides[get_db] = test_db
+    try:
+        with session_factory() as db:
+            user = User(username="checker-owner", hashed_password=hash_password("checker-owner-password"))
+            db.add(user); db.flush()
+            item = TrackedItem(user_id=user.id,
+                               original_url="https://comix.to/title/39w1n-the-mating-of-elves",
+                               series_url="https://comix.to/title/39w1n-the-mating-of-elves",
+                               toc_url="https://comix.to/title/39w1n-the-mating-of-elves",
+                               strategy_override="TOC_SCRAPER", latest_chapter="73",
+                               last_outcome="FAILED", last_error="EMPTY: No trustworthy series chapter links were found.",
+                               consecutive_failures=2)
+            db.add(item); db.commit(); item_id = item.id
+        client = TestClient(main.app)
+        csrf = client.post("/auth/login", json={"username": "checker-owner", "password": "checker-owner-password"}).json()["csrf_token"]
+        changed = client.patch(f"/items/{item_id}", json={"strategy_override": "COMIX"}, headers={"X-CSRF-Token": csrf})
+        assert changed.status_code == 200, changed.text
+        data = changed.json()
+        assert data["check_config_changed"] is True
+        assert (data["last_outcome"], data["last_error"], data["consecutive_failures"]) == (None, None, 0)
+        assert data["latest_chapter"] == "73"
+        unchanged = client.patch(f"/items/{item_id}", json={"strategy_override": "COMIX"}, headers={"X-CSRF-Token": csrf})
+        assert unchanged.json()["check_config_changed"] is False
     finally:
         main.app.dependency_overrides.clear()
 

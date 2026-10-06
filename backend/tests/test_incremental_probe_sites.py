@@ -149,29 +149,6 @@ def _run_incremental_probe_with_fake_client(
     return detection.current_chapter, latest
 
 
-def _webtoons_response_factory(latest_available: int):
-    def _factory(url: str) -> _FakeStreamResponse:
-        chapter_number = _extract_chapter_number(url)
-        if chapter_number is None or chapter_number > latest_available:
-            return _FakeStreamResponse(status_code=404, url=url)
-
-        final_url = (
-            "https://www.webtoons.com/en/super-hero/unordinary/"
-            f"episode-{chapter_number}/viewer?title_no=679&episode_no={chapter_number}"
-        )
-        history = (
-            [] if final_url == url else [_FakeHistoryResponse(url, status_code=302)]
-        )
-        return _FakeStreamResponse(
-            status_code=200,
-            url=final_url,
-            text="<html>episode page</html>",
-            history=history,
-        )
-
-    return _factory
-
-
 def _manhwaread_response_factory(latest_available: int):
     def _factory(url: str) -> _FakeStreamResponse:
         chapter_number = _extract_chapter_number(url)
@@ -208,22 +185,15 @@ def test_freewebnovel_sequential_probe_finds_newer_chapter() -> None:
     assert int(latest) > int(current)
 
 
-def test_webtoons_sequential_probe_with_custom_regex_episode_no() -> None:
+def test_two_chapter_identifiers_withhold_sequential_template() -> None:
     start_url = (
         "https://www.webtoons.com/en/super-hero/unordinary/"
         "episode-374/viewer?title_no=679&episode_no=393"
     )
 
-    current, latest = _run_incremental_probe_with_fake_client(
-        start_url,
-        response_factory=_webtoons_response_factory(latest_available=398),
-        manual_regex=r"episode_no=(\d+)",
-    )
-
-    assert int(current) == 393
-    assert latest is not None
-    assert int(latest) == 398
-    assert int(latest) > int(current)
+    assert detect_pattern(start_url).url_template is None
+    assert detect_pattern(start_url, r"episode-(\d+)").url_template is None
+    assert detect_pattern(start_url, r"episode_no=(\d+)").url_template is None
 
 
 def test_manhwaread_sequential_probe_finds_newer_chapter() -> None:

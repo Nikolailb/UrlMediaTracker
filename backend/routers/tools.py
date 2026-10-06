@@ -1,4 +1,5 @@
 import httpx
+from typing import Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -15,6 +16,7 @@ from services.checking.browser import browser_get, BrowserFetchError
 from services.checking.http import validate_public_url
 from services.checking.sites.freewebnovel import series_url as freewebnovel_series_url, chapter_template as freewebnovel_template, parse_freewebnovel
 from services.pattern_detection import detect_pattern
+from urllib.parse import urlsplit
 
 router = APIRouter(prefix="/tools", tags=["tools"], dependencies=[Depends(current_identity)])
 
@@ -28,6 +30,8 @@ class TocPreviewInput(BaseModel):
     example_urls: list[str] = Field(default_factory=list, max_length=2)
     row_html: str | None = Field(default=None, max_length=5000)
     preferred_group: str | None = Field(default=None, max_length=200)
+    chapter_regex: str | None = Field(default=None, max_length=500)
+    strategy_override: Literal["AUTO", "COMIX", "FREEWEBNOVEL", "TOC_SCRAPER", "TOC_THEN_PROBE", "INCREMENTAL_PROBE"] = "AUTO"
 
 
 @router.post("/toc-preview")
@@ -39,9 +43,19 @@ async def toc_preview(payload: TocPreviewInput):
             await validate_public_url(url)
     except (UnsafeSource, ValueError) as exc:
         return {"state": "REJECTED", "method": "TOC_SCRAPER", "warnings": [str(exc)]}
+    selected = payload.strategy_override
     comix = comix_series_url(payload.url)
+    freewebnovel = freewebnovel_series_url(payload.url)
+    if selected == "INCREMENTAL_PROBE":
+        return {"state": "UNSUPPORTED", "method": "INCREMENTAL_PROBE",
+                "warnings": ["Sequential URL probing does not read a ToC. Preview its chapter URL pattern instead."]}
+    if (selected == "COMIX" and not comix) or (selected == "FREEWEBNOVEL" and not freewebnovel):
+        return {"state": "UNSUPPORTED", "method": selected,
+                "warnings": ["This site checker does not match the supplied series URL."]}
+    use_comix = bool(comix and selected in {"AUTO", "COMIX"})
+    use_freewebnovel = bool(freewebnovel and selected in {"AUTO", "FREEWEBNOVEL"})
     try:
-        if comix:
+        if use_comix:
             status, _, body, headers = await _checker_get(comix, purpose="SITE_SCRAPER")
             if _challenge(status, body, headers):
                 return {"state": "BLOCKED", "method": "COMIX", "warnings": ["Likely browser challenge."]}
@@ -57,15 +71,33 @@ async def toc_preview(payload: TocPreviewInput):
                     found.warnings.append("Preferred group could not be checked; using the series link.")
             elif found.state == "OK" and payload.preferred_group:
                 found.warnings.append("Browser group lookup is not enabled; using the series link.")
+        elif use_freewebnovel:
+            status, _, body, headers = await _checker_get(freewebnovel, purpose="SITE_SCRAPER")
+            if _challenge(status, body, headers):
+                return {"state": "BLOCKED", "method": "FREEWEBNOVEL", "warnings": ["Likely browser challenge."]}
+            if status >= 400 or len(body) >= 512_001:
+                return {"state": "TRUNCATED" if len(body) >= 512_001 else "HTTP_ERROR",
+                        "method": "FREEWEBNOVEL", "warnings": ["Page unavailable or truncated."]}
+            data = parse_freewebnovel(body.decode("utf-8", "replace"), freewebnovel)
+            return {"state": "OK" if data.get("chapter") else "EMPTY", "method": "FREEWEBNOVEL",
+                    "confidence": "HIGH" if data.get("chapter") else "LOW",
+                    "latest_chapter": data.get("chapter"), "latest_url": data.get("chapter_url"),
+                    "first_url": None, "title": data.get("title"), "cover_url": data.get("cover_url"),
+                    "groups": [], "group_labels": {}, "samples": [],
+                    "warnings": [] if data.get("chapter") else ["No consistent latest-chapter signals on the series page."]}
         else:
             found = await extract_toc(payload.url, examples=payload.example_urls,
                                       row_class=row_class_from_html(payload.row_html),
-                                      preferred_group=payload.preferred_group)
+                                      preferred_group=payload.preferred_group,
+                                      chapter_regex=payload.chapter_regex)
+            if comix and found.state == "EMPTY":
+                found.warnings.append("Comix loads chapter rows in the browser. Choose Automatic or Comix site checker instead of generic ToC scan.")
     except (httpx.TimeoutException, httpx.ConnectError) as exc:
         return {"state": "TIMEOUT" if isinstance(exc, httpx.TimeoutException) else "FAILED",
-                "method": "COMIX" if comix else "TOC_SCRAPER", "warnings": ["Could not connect to the source."]}
+                "method": "COMIX" if use_comix else "FREEWEBNOVEL" if use_freewebnovel else "TOC_SCRAPER",
+                "warnings": ["Could not connect to the source."]}
     except (httpx.RequestError, UnsafeSource, ValueError) as exc:
-        return {"state": "FAILED", "method": "COMIX" if comix else "TOC_SCRAPER",
+        return {"state": "FAILED", "method": "COMIX" if use_comix else "FREEWEBNOVEL" if use_freewebnovel else "TOC_SCRAPER",
                 "warnings": [str(exc)[:200]]}
     return {"state": found.state, "method": found.method, "confidence": found.confidence,
             "latest_chapter": found.latest.chapter if found.latest else None,
@@ -111,6 +143,16 @@ async def preview(payload: UrlInput):
                     found = {"title": comix_result.title, "chapter": comix_result.latest.chapter,
                              "cover_url": comix_result.cover_url}
         except Exception:
+            pass
+    parts = urlsplit(payload.url)
+    if (not series_url and not comix and
+            parts.path.rstrip("/").rsplit("/", 1)[-1].lower() in {"list", "chapters", "toc", "chapter-list"} and
+            access["state"] == "REACHABLE"):
+        try:
+            toc = await extract_toc(payload.url)
+            if toc.state == "OK" and toc.latest:
+                found["chapter"] = toc.latest.chapter
+        except (httpx.RequestError, UnsafeSource, ValueError):
             pass
     return {"access": access, "title": found.get("title"),
             "current_chapter": detection.current_chapter,

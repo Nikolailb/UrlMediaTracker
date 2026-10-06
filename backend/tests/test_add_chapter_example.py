@@ -9,6 +9,7 @@ import main
 from database import get_db
 from models.base import Base
 from models.user import User
+from models.item import TrackedItem, PatternSource
 from services.auth import hash_password
 
 
@@ -80,5 +81,70 @@ def test_toc_first_add_uses_chapter_example_without_inferred_progress(monkeypatc
             "url": toc, "chapter_url": "file:///etc/passwd",
         }, headers=headers)
         assert invalid.status_code == 422
+    finally:
+        main.app.dependency_overrides.clear()
+
+
+def test_create_and_mark_sensitive_while_safe_view_is_on(monkeypatch):
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+
+    def session_factory():
+        return Session(engine)
+
+    def test_db():
+        with session_factory() as db:
+            yield db
+
+    async def no_cover(_url):
+        return None
+
+    monkeypatch.setattr(main, "SessionLocal", session_factory)
+    monkeypatch.setattr("routers.items.fetch_cover", no_cover)
+    main.app.dependency_overrides[get_db] = test_db
+    try:
+        with session_factory() as db:
+            db.add(User(username="reader", hashed_password=hash_password("reader-long-password")))
+            db.commit()
+        client = TestClient(main.app)
+        login = client.post("/auth/login", json={"username": "reader", "password": "reader-long-password"})
+        assert login.json()["safe_view_enabled"] is True
+        headers = {"X-CSRF-Token": login.json()["csrf_token"]}
+
+        hidden = client.post("/items", json={"url": "https://example.com/private/list", "is_sensitive": True}, headers=headers)
+        assert hidden.status_code == 201, hidden.text
+        hidden_id = hidden.json()["id"]
+        assert client.get("/items").json() == []
+        assert client.get(f"/items/{hidden_id}").status_code == 404
+
+        visible = client.post("/items", json={"url": "https://example.com/public/list"}, headers=headers)
+        assert visible.status_code == 201
+        visible_id = visible.json()["id"]
+        changed = client.patch(f"/items/{visible_id}", json={"is_sensitive": True}, headers=headers)
+        assert changed.status_code == 200
+        assert client.get("/items").json() == []
+        assert client.get(f"/items/{visible_id}").status_code == 404
+
+        with session_factory() as db:
+            reader = db.query(User).filter_by(username="reader").one()
+            webtoon = TrackedItem(
+                original_url="https://www.webtoons.com/en/super-hero/unordinary/list?title_no=679",
+                toc_url="https://www.webtoons.com/en/super-hero/unordinary/list?title_no=679",
+                url_template="https://www.webtoons.com/en/super-hero/unordinary/episode-{n}/viewer?title_no=679&episode_no=404",
+                chapter_regex=r"episode-(\d+)", pattern_source=PatternSource.MANUAL,
+                latest_chapter="393", current_chapter="391", user_id=reader.id,
+            )
+            db.add(webtoon)
+            db.commit()
+            webtoon_id = webtoon.id
+        next_page = client.get(f"/items/{webtoon_id}/next")
+        assert next_page.status_code == 200
+        assert next_page.json()["destination"] == "TOC"
+        assert next_page.json()["next_url"].endswith("/list?title_no=679")
+        edited = client.patch(f"/items/{webtoon_id}", json={"manual_regex": r"episode-(\d+)",
+                                                       "strategy_override": "TOC_SCRAPER"}, headers=headers)
+        assert edited.status_code == 200, edited.text
+        assert edited.json()["chapter_regex"] == r"episode-(\d+)"
+        assert edited.json()["url_template"] is None
     finally:
         main.app.dependency_overrides.clear()

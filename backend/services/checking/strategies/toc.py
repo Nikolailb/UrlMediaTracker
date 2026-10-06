@@ -55,6 +55,14 @@ def _rank(chapter: str):
     return (Decimal(m.group(1)), m.group(2)) if m else None
 
 
+def query_identity_conflicts(source_query: str, candidate_query: str) -> bool:
+    """Reject conflicting shared query values without assuming site-specific keys."""
+    source = parse_qs(source_query)
+    candidate = parse_qs(candidate_query)
+    return any(candidate[key] != values for key, values in source.items()
+               if key not in {"page", "p", "offset", "sort", "order"} and key in candidate)
+
+
 def row_class_from_html(snippet: str | None) -> str | None:
     if not snippet:
         return None
@@ -68,13 +76,34 @@ def row_class_from_html(snippet: str | None) -> str | None:
 
 
 def parse_toc(html: str, toc_url: str, *, examples: list[str] | None = None,
-              row_class: str | None = None, preferred_group: str | None = None) -> Extraction:
+              row_class: str | None = None, preferred_group: str | None = None,
+              chapter_regex: str | None = None) -> Extraction:
+    compiled = None
+    if chapter_regex:
+        try:
+            compiled = re.compile(chapter_regex, re.I)
+        except re.error as exc:
+            return Extraction("CONTRADICTORY", "TOC_SCRAPER", warnings=[f"Invalid chapter regex: {exc}"])
+        if compiled.groups != 1:
+            return Extraction("CONTRADICTORY", "TOC_SCRAPER", warnings=["Chapter regex needs exactly one capture group."])
     page = _Page()
     page.feed(html)
     host = (urlsplit(toc_url).hostname or "").lower()
-    series_path = urlsplit(toc_url).path.rstrip("/")
-    example_paths = [urlsplit(url).path.rsplit("/", 1)[0] for url in (examples or [])
-                     if (urlsplit(url).hostname or "").lower() == host]
+    source = urlsplit(toc_url)
+    series_path = source.path.rstrip("/")
+    # A list endpoint is often a sibling of its chapter URLs.
+    if series_path.rsplit("/", 1)[-1].lower() in {"list", "chapters", "toc", "chapter-list"}:
+        series_path = series_path.rsplit("/", 1)[0]
+    example_paths = []
+    for url in examples or []:
+        parts = urlsplit(url)
+        if (parts.hostname or "").lower() != host:
+            continue
+        parent = parts.path.rstrip("/").rsplit("/", 1)[0]
+        if _NUMBER.search(parent.rsplit("/", 1)[-1]):
+            parent = parent.rsplit("/", 1)[0]
+        if parent == series_path or parent.startswith(series_path + "/"):
+            example_paths.append(parent)
     prefix = series_path if not example_paths else min(example_paths, key=len)
     candidates: list[ChapterLink] = []
     conflicts = 0
@@ -85,14 +114,24 @@ def parse_toc(html: str, toc_url: str, *, examples: list[str] | None = None,
             continue
         if not parts.path.startswith(prefix + "/"):
             continue
+        if query_identity_conflicts(source.query, parts.query):
+            continue
         context = " ".join(node["class"] + " " + node["id"] for node in parents).lower()
         if any(bad in context for bad in _BAD_REGION):
             continue
         if row_class and not any(row_class in node["class"].split() for node in parents):
             continue
-        chapter = _number(label, absolute)
+        if compiled:
+            match = compiled.search(absolute)
+            chapter = match.group(1).lower() if match else None
+            displayed = _NUMBER.search(label)
+            if chapter and displayed and chapter != displayed.group(1).lower():
+                conflicts += 1
+                continue
+        else:
+            chapter = _number(label, absolute)
         if chapter is None:
-            if _NUMBER.search(label):
+            if not compiled and _NUMBER.search(label):
                 conflicts += 1
             continue
         group = next((node["group"] for node in reversed(parents) if node["group"]), None)
@@ -101,6 +140,8 @@ def parse_toc(html: str, toc_url: str, *, examples: list[str] | None = None,
     for href, _, _ in page.anchors:
         link = urljoin(toc_url, href)
         if (urlsplit(link).hostname or "").lower() != host:
+            continue
+        if query_identity_conflicts(source.query, urlsplit(link).query):
             continue
         try:
             number = int(parse_qs(urlsplit(link).query).get("page", [""])[0])

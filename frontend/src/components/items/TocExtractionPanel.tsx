@@ -7,6 +7,9 @@ import type { TocExtractionPreview } from '@/types/api'
 
 interface Props {
   tocUrl: string
+  strategyOverride: string
+  chapterRegex: string
+  onStrategyChange: (value: string) => void
   exampleUrls: string[]
   setExampleUrls: (value: string[]) => void
   rowHtml: string
@@ -14,15 +17,21 @@ interface Props {
   preferredGroup: string
   setPreferredGroup: (value: string) => void
   onApply?: (result: TocExtractionPreview) => void
+  savedRowClass?: string | null
+  onClearRowClass?: () => void
 }
 
 export function TocExtractionPanel({
-  tocUrl, exampleUrls, setExampleUrls, rowHtml, setRowHtml,
+  tocUrl, strategyOverride, chapterRegex, onStrategyChange, exampleUrls, setExampleUrls, rowHtml, setRowHtml,
   preferredGroup, setPreferredGroup, onApply,
+  savedRowClass, onClearRowClass,
 }: Props) {
   const [preview, setPreview] = useState<TocExtractionPreview | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  let isComix = false
+  try { isComix = ['comix.to', 'www.comix.to'].includes(new URL(tocUrl).hostname.toLowerCase()) } catch { /* incomplete URL */ }
+  const genericComix = isComix && ['TOC_SCRAPER', 'TOC_THEN_PROBE'].includes(strategyOverride)
 
   async function test() {
     setBusy(true)
@@ -34,6 +43,8 @@ export function TocExtractionPanel({
         example_urls: exampleUrls.map((url) => url.trim()).filter(Boolean),
         row_html: rowHtml.trim() || null,
         preferred_group: preferredGroup || null,
+        strategy_override: strategyOverride,
+        chapter_regex: chapterRegex.trim() || null,
       })
       setPreview(result)
     } catch (cause) {
@@ -44,24 +55,33 @@ export function TocExtractionPanel({
   }
 
   return <div className="space-y-3 rounded-md border border-border p-3 text-xs">
-    <div className="font-medium">Test ToC extraction</div>
-    <p className="text-muted-foreground">Reads the series page and previews real chapter links. A reachable site may still have no chapter links in its HTML.</p>
+    <div className="font-medium">Test selected checker</div>
+    <p className="text-muted-foreground">Tests the method selected above. Chapter examples are optional guidance for a generic ToC page with visible chapter links; they cannot make a page reveal links it does not contain.</p>
+    {chapterRegex.trim() && <p className="text-muted-foreground">Generic ToC extraction will use your chapter URL regex: <code>{chapterRegex}</code></p>}
+    {genericComix && <div className="space-y-2 rounded border border-amber-500/40 p-2 text-amber-500">
+      <p>Comix loads its chapter list separately. The generic ToC scanner will see an empty list. Use the Comix site checker for this series.</p>
+      <Button type="button" size="sm" variant="outline" onClick={() => { onStrategyChange('COMIX'); setPreview(null) }}>Use Comix checker</Button>
+    </div>}
     {[0, 1].map((index) => <div key={index} className="space-y-1">
       <Label htmlFor={`toc-example-${index}`}>Example chapter link {index + 1} (optional)</Label>
       <Input id={`toc-example-${index}`} type="url" value={exampleUrls[index] ?? ''}
         placeholder="https://example.com/series/chapter-63"
-        onChange={(event) => setExampleUrls([0, 1].map((slot) => slot === index ? event.target.value : exampleUrls[slot] ?? ''))} />
+        onChange={(event) => { setExampleUrls([0, 1].map((slot) => slot === index ? event.target.value : exampleUrls[slot] ?? '')); setPreview(null) }} />
     </div>)}
     <div className="space-y-1">
       <Label htmlFor="toc-row-html">Copied chapter row HTML (optional)</Label>
+      {savedRowClass && <div className="flex items-center justify-between gap-2 text-muted-foreground">
+        <span>Saved row class: <code>{savedRowClass}</code></span>
+        {onClearRowClass && <Button type="button" size="sm" variant="ghost" onClick={() => { onClearRowClass(); setPreview(null) }}>Clear hint</Button>}
+      </div>}
       <textarea id="toc-row-html" rows={2} maxLength={5000} value={rowHtml}
-        onChange={(event) => setRowHtml(event.target.value)}
+        onChange={(event) => { setRowHtml(event.target.value); setPreview(null) }}
         className="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs"
         placeholder="<li class=&quot;chapter-row&quot;>…</li>" />
       <p className="text-muted-foreground">Used only to identify a row class. The HTML itself is not saved.</p>
     </div>
     <Button type="button" size="sm" variant="outline" disabled={!tocUrl.trim() || busy} onClick={test}>
-      {busy ? 'Checking…' : 'Test ToC extraction'}
+      {busy ? 'Checking…' : 'Test selected checker'}
     </Button>
     {error && <p role="alert" className="text-destructive">{error}</p>}
     {preview && <div className="space-y-2 rounded border border-border bg-muted/30 p-2">

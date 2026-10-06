@@ -18,6 +18,7 @@ import { post } from '@/api/client'
 import { itemsApi } from '@/api/items'
 import { useQueryClient } from '@tanstack/react-query'
 import { TocExtractionPanel } from './TocExtractionPanel'
+import { useAuth } from '@/auth/context'
 
 type SourcePreview = { title: string | null; current_chapter: string | null; latest_chapter: string | null; cover_url: string | null; checker: string; access: { state: string; status_code: number | null } }
 
@@ -39,7 +40,7 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
   const [chapterExampleUrl, setChapterExampleUrl] = useState('')
   const [strategyOverride, setStrategyOverride] = useState('AUTO')
   const [title, setTitle] = useState('')
-  const [interval, setInterval] = useState('60')
+  const [interval, setInterval] = useState('360')
   const [tocUrl, setTocUrl] = useState('')
   const [category, setCategory] = useState('')
   const [preview, setPreview] = useState<PatternDetectionResult | null>(null)
@@ -59,6 +60,7 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
   const detect = usePatternDetect()
   const create = useCreateItem()
   const queryClient = useQueryClient()
+  const { session } = useAuth()
 
   // Reset on close
   useEffect(() => {
@@ -69,7 +71,7 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
       setChapterExampleUrl('')
       setStrategyOverride('AUTO')
       setTitle('')
-      setInterval('60')
+      setInterval('360')
       setTocUrl('')
       setCategory('')
       setPreview(null)
@@ -133,7 +135,7 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
         title: title.trim() || null,
         manual_regex: manualRegex.trim() || null,
         strategy_override: strategyOverride === 'AUTO' ? null : strategyOverride,
-        check_interval_min: parseInt(interval) || 60,
+        check_interval_min: parseInt(interval) || 360,
         toc_url: tocUrl.trim() || (chapterExampleUrl.trim() ? url.trim() : null),
         category: category || null,
         note: note.trim() || null,
@@ -146,6 +148,14 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
       },
       {
         onSuccess: async (created) => {
+          if (sensitive && session?.safe_view_enabled) {
+            toast.success('Sensitive item added. Reveal sensitive entries to see it in your library.')
+            if (coverUrl.trim() && !created.cover_filename) {
+              toast.warning('Reveal the item before setting its custom cover URL.')
+            }
+            onOpenChange(false)
+            return
+          }
           if (coverUrl.trim()) {
             try {
               await itemsApi.setCoverUrl(created.id, coverUrl.trim())
@@ -301,15 +311,15 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
                 {!preview.url_template && (
                   <div className="flex items-center gap-1.5 text-destructive">
                     <AlertCircle className="h-3.5 w-3.5" />
-                    {preview.strategy_used === 'opaque_id'
-                      ? 'This chapter URL has a separate numeric ID. Sequential probing cannot predict future links; a ToC scan may still find actual links.'
+                    {['opaque_id', 'ambiguous_id'].includes(preview.strategy_used)
+                      ? 'This chapter URL has another numeric ID. Sequential probing cannot predict future links; a ToC scan can use your regex and actual links.'
                       : 'No reusable URL pattern found. Try a ToC extraction test or track manually.'}
                   </div>
                 )}
               </div>
             )}
               </div>
-              <TocExtractionPanel tocUrl={tocUrl.trim() || url.trim()} exampleUrls={tocExamples}
+              <TocExtractionPanel key={`${strategyOverride}:${tocUrl.trim() || url.trim()}:${manualRegex}`} tocUrl={tocUrl.trim() || url.trim()} strategyOverride={strategyOverride} chapterRegex={manualRegex} onStrategyChange={setStrategyOverride} exampleUrls={tocExamples}
                 setExampleUrls={setTocExamples} rowHtml={tocRowHtml} setRowHtml={setTocRowHtml}
                 preferredGroup={preferredGroup} setPreferredGroup={setPreferredGroup}
                 onApply={(found) => {

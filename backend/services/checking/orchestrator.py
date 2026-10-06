@@ -100,7 +100,7 @@ async def check_item(
                 item.toc_latest_page_url = result.toc_latest_page_url
             item.last_checked_at = datetime.now(timezone.utc)
             log.success = log.outcome in {"NEW", "UNCHANGED"}
-            if result.outcome in {"NEW", "UNCHANGED"}:
+            if result.outcome in {"NEW", "UNCHANGED", "PENDING"}:
                 item.consecutive_failures = 0
                 item.last_error = None
             elif result.outcome == "BLOCKED":

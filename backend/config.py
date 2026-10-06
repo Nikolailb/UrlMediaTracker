@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./tracker.db"
-    DEFAULT_CHECK_INTERVAL_MIN: int = 60
+    DEFAULT_CHECK_INTERVAL_MIN: int = 360
     PROBE_REQUEST_TIMEOUT: float = 10.0
     PROBE_DELAY_SECONDS: float = 0.5
     # Coarse step size for the two-phase chapter probe (probe N+STEP, N+2*STEP…
