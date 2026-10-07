@@ -93,3 +93,7 @@ Use the numeric fiction ID as the stable source key and retain the current slug 
 ## D-028 — Scribble Hub first-page order (2026-10-07)
 
 Use the numeric series ID as the source key and the first ToC page's explicit row order as the release position. The supplied page declares 126 entries and its newest row is order 126, while the title says Chapter 125; title numbers and opaque chapter IDs are unsuitable for progress. The site's page selector uses JavaScript pagination, but its default first page already contains the latest rows. One guarded browser request after the observed direct Cloudflare 403 returned the same series-scoped links and count. Validate count, selected page size, descending order, and series link identity; treat a changed latest chapter ID at the same count as a check issue, while allowing a title slug change around the same ID. Fetching every older AJAX page, sequential probing, and inferring an ID from the title were rejected. This host is allowlisted locally for review only. REQ-015, REQ-019.
+
+## D-029 — Editable Novel default (2026-10-07)
+
+Suggest the existing `Novel` category for new FreeWebNovel, WebNovel, Royal Road, and Scribble Hub entries using their URL recognizers. A user may choose any category or no category. API omission receives the default; explicit `null` means none. Keep existing records and imports unchanged. Automatically reclassifying old entries or inferring categories from scraped titles was rejected because those would overwrite personal organization. REQ-020.

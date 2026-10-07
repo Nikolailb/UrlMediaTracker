@@ -28,6 +28,7 @@ WHEELS/
 # Test / coverage
 .pytest_cache/
 .pytest-tmp/
+.pytest-*-temp/
 .coverage
 .coverage.*
 htmlcov/

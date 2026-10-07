@@ -33,6 +33,8 @@ const CONFIDENCE_VARIANT = {
   LOW: 'destructive',
 } as const
 
+const NOVEL_CHECKERS = new Set(['FREEWEBNOVEL', 'WEBNOVEL', 'ROYALROAD', 'SCRIBBLEHUB'])
+
 export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
   const [step, setStep] = useState<1 | 2>(1)
   const [url, setUrl] = useState('')
@@ -57,6 +59,7 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
   const [preferredGroup, setPreferredGroup] = useState('')
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const categoryEdited = useRef(false)
   const detect = usePatternDetect()
   const create = useCreateItem()
   const queryClient = useQueryClient()
@@ -74,6 +77,7 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
       setInterval('360')
       setTocUrl('')
       setCategory('')
+      categoryEdited.current = false
       setPreview(null)
       setSourcePreview(null)
       setPreviewError(false)
@@ -111,6 +115,7 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
     try {
       const result = await post<SourcePreview>('/tools/preview', { url: url.trim() })
       setSourcePreview(result)
+      if (!categoryEdited.current) setCategory(NOVEL_CHECKERS.has(result.checker) ? 'Novel' : '')
     } catch {
       setSourcePreview(null)
       setPreviewError(true)
@@ -137,7 +142,7 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
         strategy_override: strategyOverride === 'AUTO' ? null : strategyOverride,
         check_interval_min: parseInt(interval) || 360,
         toc_url: tocUrl.trim() || (chapterExampleUrl.trim() ? url.trim() : null),
-        category: category || null,
+        category: category || (categoryEdited.current ? null : undefined),
         note: note.trim() || null,
         is_sensitive: sensitive,
         current_chapter: currentChapter.trim() || null,
@@ -226,7 +231,7 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="category">Category <span className="text-muted-foreground font-normal">(optional)</span></Label>
-              <Select value={category} onValueChange={(v) => setCategory(v === '__none__' ? '' : v)}>
+              <Select value={category} onValueChange={(v) => { categoryEdited.current = true; setCategory(v === '__none__' ? '' : v) }}>
                 <SelectTrigger id="category"><SelectValue placeholder="No category" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">No category</SelectItem>

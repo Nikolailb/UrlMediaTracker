@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models.check_log import ChapterCheckLog
-from models.item import CheckStrategy, TrackedItem
+from models.item import CheckStrategy, ItemCategory, TrackedItem
 from schemas.item import ItemCreate, ItemRead, ItemUpdate, MarkReadRequest, NextChapterResponse
 from services.auth import Identity, IdentityDep, owner_id
 from services.checking.orchestrator import MANUAL_CHECK_COOLDOWN_SECONDS, _last_manual_check, check_item
@@ -81,6 +81,11 @@ async def create_item(payload: ItemCreate, db: DbDep, identity: IdentityDep):
     series_url = (freewebnovel_series_url(payload.url) or comix_series_url(payload.url) or
                   webnovel_series_url(payload.url) or royalroad_series_url(payload.url) or
                   scribblehub_series_url(payload.url))
+    # REQ-020: suggest Novel for known prose sites only when no category was supplied.
+    category = (ItemCategory.NOVEL if "category" not in payload.model_fields_set and
+                (freewebnovel_series_url(payload.url) or webnovel_series_url(payload.url) or
+                 royalroad_series_url(payload.url) or scribblehub_series_url(payload.url))
+                else payload.category)
     has_opaque_site_ids = bool(webnovel_series_url(payload.url) or royalroad_series_url(payload.url) or
                                scribblehub_series_url(payload.url))
     template = (None if has_opaque_site_ids else
@@ -98,7 +103,7 @@ async def create_item(payload: ItemCreate, db: DbDep, identity: IdentityDep):
         current_chapter=payload.current_chapter or inferred_chapter,
         latest_chapter=payload.latest_chapter or inferred_chapter,
         check_interval_min=payload.check_interval_min,
-        toc_url=toc_url, category=payload.category,
+        toc_url=toc_url, category=category,
         note=payload.note, is_sensitive=payload.is_sensitive,
         preferred_group=payload.preferred_group,
         toc_examples_json=(json.dumps(_chapter_examples(payload.chapter_url, payload.toc_example_urls))
