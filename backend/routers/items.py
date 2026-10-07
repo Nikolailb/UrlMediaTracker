@@ -19,6 +19,9 @@ from services.checking.orchestrator import MANUAL_CHECK_COOLDOWN_SECONDS, _last_
 from services.pattern_detection import build_chapter_url, detect_pattern, unsafe_chapter_template
 from services.checking.http import UnsafeSource, safe_get
 from services.checking.sites.freewebnovel import series_url as freewebnovel_series_url, chapter_template as freewebnovel_template
+from services.checking.sites.webnovel import series_url as webnovel_series_url
+from services.checking.sites.royalroad import series_url as royalroad_series_url
+from services.checking.sites.scribblehub import series_url as scribblehub_series_url
 from services.checking.sites.comix import series_url as comix_series_url
 from services.checking.strategies.toc import row_class_from_html, parse_toc_examples
 from services.covers import cover_path, save_cover, fetch_cover, MAX_UPLOAD
@@ -66,16 +69,27 @@ def _to_read(item: TrackedItem) -> ItemRead:
                                     "toc_example_urls": parse_toc_examples(item.toc_examples_json)})
 
 
+def _chapter_examples(chapter_url: str | None, examples: list[str]) -> list[str]:
+    """The advanced chapter URL is also the first ToC shape hint (REQ-016)."""
+    return list(dict.fromkeys(([chapter_url] if chapter_url else []) + examples))[:2]
+
+
 @router.post("", response_model=ItemRead, status_code=201)
 async def create_item(payload: ItemCreate, db: DbDep, identity: IdentityDep):
     # REQ-004: a chapter example supplies the link pattern, never reading progress.
     detection = detect_pattern(payload.chapter_url or payload.url, payload.manual_regex)
-    series_url = freewebnovel_series_url(payload.url) or comix_series_url(payload.url)
-    template = (freewebnovel_template(series_url)
+    series_url = (freewebnovel_series_url(payload.url) or comix_series_url(payload.url) or
+                  webnovel_series_url(payload.url) or royalroad_series_url(payload.url) or
+                  scribblehub_series_url(payload.url))
+    has_opaque_site_ids = bool(webnovel_series_url(payload.url) or royalroad_series_url(payload.url) or
+                               scribblehub_series_url(payload.url))
+    template = (None if has_opaque_site_ids else
+                freewebnovel_template(series_url)
                 if series_url and payload.strategy_override in {None, "FREEWEBNOVEL"}
                 else detection.url_template)
-    toc_url = payload.toc_url or (payload.url if payload.chapter_url or not detection.url_template else None)
-    inferred_chapter = None if payload.chapter_url else detection.current_chapter
+    toc_url = payload.toc_url or (series_url if has_opaque_site_ids else
+                                  payload.url if payload.chapter_url or not detection.url_template else None)
+    inferred_chapter = None if payload.chapter_url or has_opaque_site_ids else detection.current_chapter
     item = TrackedItem(
         id=str(uuid.uuid4()), user_id=identity.library_user_id,
         title=payload.title, original_url=payload.url, series_url=series_url,
@@ -87,7 +101,8 @@ async def create_item(payload: ItemCreate, db: DbDep, identity: IdentityDep):
         toc_url=toc_url, category=payload.category,
         note=payload.note, is_sensitive=payload.is_sensitive,
         preferred_group=payload.preferred_group,
-        toc_examples_json=json.dumps(payload.toc_example_urls) if payload.toc_example_urls else None,
+        toc_examples_json=(json.dumps(_chapter_examples(payload.chapter_url, payload.toc_example_urls))
+                           if payload.chapter_url or payload.toc_example_urls else None),
         toc_row_class=row_class_from_html(payload.toc_row_html),
         strategy_override=payload.strategy_override,
         check_strategy=(CheckStrategy.TOC_THEN_PROBE if toc_url else CheckStrategy.INCREMENTAL_PROBE),
@@ -140,6 +155,9 @@ def update_item(item_id: str, payload: ItemUpdate, db: DbDep, identity: Identity
     row_html = data.pop("toc_row_html", None)
     if example_urls is not None:
         item.toc_examples_json = json.dumps(example_urls) if example_urls else None
+    if chapter_example:
+        hints = _chapter_examples(chapter_example, parse_toc_examples(item.toc_examples_json))
+        item.toc_examples_json = json.dumps(hints)
     if row_html is not None:
         item.toc_row_class = row_class_from_html(row_html)
     if chapter_example:
@@ -294,7 +312,10 @@ def get_next_chapter(item_id: str, db: DbDep, identity: IdentityDep):
     except ValueError:
         return NextChapterResponse(item_id=item_id, next_chapter=None, next_url=toc,
                                    message="Exact chapter unknown; opening the ToC.", destination="TOC")
-    if item.url_template and "{n}" in item.url_template and not unsafe_chapter_template(item.url_template):
+    if (not (webnovel_series_url(item.series_url or item.original_url) or
+             royalroad_series_url(item.series_url or item.original_url) or
+             scribblehub_series_url(item.series_url or item.original_url)) and item.url_template and
+            "{n}" in item.url_template and not unsafe_chapter_template(item.url_template)):
         return NextChapterResponse(item_id=item_id, next_chapter=next_num,
                                    next_url=build_chapter_url(item.url_template, next_num),
                                    message="Next chapter URL generated.", destination="CHAPTER")

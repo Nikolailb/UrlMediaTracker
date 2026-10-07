@@ -25,3 +25,6 @@ class Extraction:
     cover_url: str | None = None
     first_url: str | None = None
     group_labels: dict[str, str] = field(default_factory=dict)
+
+    # REQ-018: transient ordered Royal Road IDs, used to detect new entries after stubbing.
+    catalog_ids: list[int] = field(default_factory=list)

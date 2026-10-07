@@ -1,4 +1,6 @@
 """REQ-004/REQ-005: a ToC-first add can use a separate chapter URL example."""
+import asyncio
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -11,6 +13,8 @@ from models.base import Base
 from models.user import User
 from models.item import TrackedItem, PatternSource
 from services.auth import hash_password
+from services.checking import selector
+from services.checking.orchestrator import CheckerConfig
 
 
 def test_toc_first_add_uses_chapter_example_without_inferred_progress(monkeypatch):
@@ -39,7 +43,7 @@ def test_toc_first_add_uses_chapter_example_without_inferred_progress(monkeypatc
         login = client.post("/auth/login", json={"username": "reader", "password": "reader-long-password"})
         assert login.status_code == 200
         headers = {"X-CSRF-Token": login.json()["csrf_token"]}
-        toc = "https://hentai20.io/i-became-a-pornhwa-npc/"
+        toc = "https://hentai20.io/manga/i-became-a-pornhwa-npc/"
         chapter = "https://hentai20.io/i-became-a-pornhwa-npc-chapter-55/"
         created = client.post("/items", json={
             "url": toc, "chapter_url": chapter, "strategy_override": "TOC_SCRAPER",
@@ -49,9 +53,23 @@ def test_toc_first_add_uses_chapter_example_without_inferred_progress(monkeypatc
         assert item["original_url"] == toc
         assert item["toc_url"] == toc
         assert item["url_template"] == "https://hentai20.io/i-became-a-pornhwa-npc-chapter-{n}/"
+        assert item["toc_example_urls"] == [chapter]
         assert item["strategy_override"] == "TOC_SCRAPER"
         assert item["current_chapter"] is None
         assert item["latest_chapter"] is None
+
+        fixture = (Path(__file__).parent / "fixtures" / "sibling_chapter_toc.html").read_text()
+
+        async def toc_page(url, **_kwargs):
+            assert url == toc
+            return 200, url, fixture.encode(), {}
+
+        monkeypatch.setattr(selector, "_checker_get", toc_page)
+        with session_factory() as db:
+            stored = db.get(TrackedItem, item["id"])
+            checked = asyncio.run(selector.check_source(stored, CheckerConfig()))
+        assert (checked.outcome, checked.chapter, checked.chapter_url) == (
+            "NEW", "80", "https://hentai20.io/i-became-a-pornhwa-npc-chapter-80/")
 
         edited = client.patch(f"/items/{item['id']}", json={
             "chapter_url": "https://hentai20.io/i-became-a-pornhwa-npc-chapter-60/",
@@ -59,6 +77,7 @@ def test_toc_first_add_uses_chapter_example_without_inferred_progress(monkeypatc
         }, headers=headers)
         assert edited.status_code == 200, edited.text
         assert edited.json()["url_template"] == "https://hentai20.io/i-became-a-pornhwa-npc-chapter-{n}/"
+        assert edited.json()["toc_example_urls"] == ["https://hentai20.io/i-became-a-pornhwa-npc-chapter-60/", chapter]
         assert edited.json()["toc_url"] == toc
         assert edited.json()["current_chapter"] is None
         assert edited.json()["latest_chapter"] is None
@@ -66,7 +85,7 @@ def test_toc_first_add_uses_chapter_example_without_inferred_progress(monkeypatc
         invalid_edit = client.patch(f"/items/{item['id']}", json={"chapter_url": "file:///etc/passwd"}, headers=headers)
         assert invalid_edit.status_code == 422
 
-        custom_toc = "https://hentai20.io/i-became-a-pornhwa-npc/chapters/"
+        custom_toc = "https://hentai20.io/manga/i-became-a-pornhwa-npc/chapters/"
         other = client.post("/items", json={
             "url": toc, "chapter_url": chapter, "toc_url": custom_toc,
             "strategy_override": "INCREMENTAL_PROBE", "current_chapter": "12",

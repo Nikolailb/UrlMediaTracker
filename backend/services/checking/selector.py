@@ -14,8 +14,13 @@ from services.checking.sites.freewebnovel import (
 from services.checking.strategies.toc import parse_toc, _rank, query_identity_conflicts
 from services.checking.strategies.toc import parse_toc_examples
 from services.checking.sites.comix import series_url as comix_series_url, parse_comix, merge_rendered_group
+from services.checking.sites.webnovel import series_url as webnovel_series_url, parse_webnovel, fetch_webnovel, MAX_PAGE_BYTES
+from services.checking.sites.royalroad import series_url as royalroad_series_url, parse_royalroad, fetch_royalroad
+from services.checking.sites.royalroad import MAX_PAGE_BYTES as ROYALROAD_MAX_PAGE_BYTES
+from services.checking.sites.scribblehub import series_url as scribblehub_series_url, parse_scribblehub, fetch_scribblehub
+from services.checking.sites.scribblehub import MAX_PAGE_BYTES as SCRIBBLEHUB_MAX_PAGE_BYTES
 from services.checking.browser import browser_enabled_for, browser_get, BrowserFetchError
-from services.checking.results import Extraction
+from services.checking.results import ChapterLink, Extraction
 
 
 @dataclass
@@ -69,6 +74,17 @@ def _from_extraction(found: Extraction, previous: str | None) -> CheckResult:
                        found.method, found.latest.chapter, found.latest.url,
                        "; ".join(found.warnings) or None, found.first_url,
                        found.confidence, found.groups, found.checked_page_url)
+
+
+def _toc_examples_for_item(item) -> list[str]:
+    examples = parse_toc_examples(getattr(item, "toc_examples_json", None))
+    # Older items stored the example-derived template but not the example.
+    template = getattr(item, "url_template", None)
+    if template and "{n}" in template and len(examples) < 2:
+        reconstructed = template.replace("{n}", item.latest_chapter or item.current_chapter or "1")
+        if reconstructed not in examples:
+            examples.append(reconstructed)
+    return examples[:2]
 
 
 async def extract_toc(url: str, *, examples: list[str] | None = None,
@@ -138,11 +154,91 @@ async def check_source(item, config) -> CheckResult:
 
     series = freewebnovel_series_url(item.series_url or item.original_url)
     comix = comix_series_url(item.series_url or item.original_url)
+    webnovel = webnovel_series_url(item.series_url or item.original_url)
+    royalroad = royalroad_series_url(item.series_url or item.original_url)
+    scribblehub = scribblehub_series_url(item.series_url or item.original_url)
     override = item.strategy_override
     if override == "COMIX" and not comix:
         return CheckResult("UNSUPPORTED", "COMIX", detail="Comix checker requires a Comix series URL")
     if override == "FREEWEBNOVEL" and not series:
         return CheckResult("UNSUPPORTED", "FREEWEBNOVEL", detail="FreeWebNovel checker requires a FreeWebNovel series URL")
+    if override == "WEBNOVEL" and not webnovel:
+        return CheckResult("UNSUPPORTED", "WEBNOVEL", detail="WebNovel checker requires a WebNovel book URL")
+    if override == "ROYALROAD" and not royalroad:
+        return CheckResult("UNSUPPORTED", "ROYALROAD", detail="Royal Road checker requires a fiction URL")
+    if override == "SCRIBBLEHUB" and not scribblehub:
+        return CheckResult("UNSUPPORTED", "SCRIBBLEHUB", detail="Scribble Hub checker requires a series URL")
+    if scribblehub and override in {None, "SCRIBBLEHUB"}:
+        try:
+            status, _, body, headers, _ = await fetch_scribblehub(scribblehub)
+            if len(body) > SCRIBBLEHUB_MAX_PAGE_BYTES:
+                return CheckResult("FAILED", "SCRIBBLEHUB", detail="TRUNCATED: Scribble Hub page exceeded the 1 MB limit.")
+            if _challenge(status, body, headers):
+                return CheckResult("BLOCKED", "SCRIBBLEHUB", detail="Likely browser challenge; browser fetch unavailable or failed.")
+            if status != 200:
+                return CheckResult("FAILED", "SCRIBBLEHUB", detail=f"HTTP {status}")
+            found = parse_scribblehub(body.decode("utf-8", "replace"), scribblehub)
+            if found.state == "OK" and found.latest and item.latest_chapter == found.latest.chapter:
+                old_url = getattr(item, "latest_chapter_url", None)
+                old_id = old_url.rstrip("/").rsplit("/chapter/", 1)[-1] if old_url and "/chapter/" in old_url else None
+                new_id = found.latest.url.rstrip("/").rsplit("/chapter/", 1)[-1]
+                if old_id and old_id != new_id:
+                    return CheckResult("FAILED", "SCRIBBLEHUB", detail="Latest link changed at the same ToC position; review possible chapter removal or replacement.")
+            return _from_extraction(found, item.latest_chapter or item.current_chapter)
+        except BrowserFetchError as exc:
+            return CheckResult("FAILED", "SCRIBBLEHUB", detail=str(exc)[:200])
+        except (httpx.RequestError, UnsafeSource, ValueError) as exc:
+            return CheckResult("FAILED", "SCRIBBLEHUB", detail=str(exc)[:200])
+    if royalroad and override in {None, "ROYALROAD"}:
+        try:
+            status, _, body, headers, _ = await fetch_royalroad(royalroad)
+            if len(body) > ROYALROAD_MAX_PAGE_BYTES:
+                return CheckResult("FAILED", "ROYALROAD", detail="TRUNCATED: Royal Road page exceeded the 3 MB limit.")
+            found = parse_royalroad(body.decode("utf-8", "replace"), royalroad) if status == 200 else None
+            if found and found.state == "OK":
+                previous_url = getattr(item, "latest_chapter_url", None)
+                previous_chapter = item.latest_chapter or item.current_chapter
+                if previous_url and previous_chapter and "/chapter/" in previous_url:
+                    old_id = previous_url.split("/chapter/", 1)[1].split("/", 1)[0]
+                    if old_id.isdigit():
+                        if int(old_id) not in found.catalog_ids:
+                            return CheckResult("FAILED", "ROYALROAD", detail="Previous latest chapter ID is no longer in the catalog; review possible stubbing or replacement.")
+                        added = len(found.catalog_ids) - 1 - found.catalog_ids.index(int(old_id))
+                        try:
+                            stable_number = str(int(previous_chapter) + added)
+                        except ValueError:
+                            return CheckResult("FAILED", "ROYALROAD", detail="Stored chapter position is not numeric.")
+                        found.latest = ChapterLink(stable_number, found.latest.url,
+                                                   source_page=found.latest.source_page)
+                return _from_extraction(found, previous_chapter)
+            if _challenge(status, body, headers):
+                return CheckResult("BLOCKED", "ROYALROAD", detail="Likely browser challenge; browser fetch unavailable or failed.")
+            if status != 200:
+                return CheckResult("FAILED", "ROYALROAD", detail=f"HTTP {status}")
+            return _from_extraction(found, item.latest_chapter or item.current_chapter)
+        except BrowserFetchError as exc:
+            return CheckResult("FAILED", "ROYALROAD", detail=str(exc)[:200])
+        except (httpx.RequestError, UnsafeSource, ValueError) as exc:
+            return CheckResult("FAILED", "ROYALROAD", detail=str(exc)[:200])
+    if webnovel and override in {None, "WEBNOVEL"}:
+        try:
+            status, _, body, headers, _ = await fetch_webnovel(webnovel)
+            if len(body) > MAX_PAGE_BYTES:
+                return CheckResult("FAILED", "WEBNOVEL", detail="TRUNCATED: WebNovel page exceeded the 5 MB limit.")
+            if status == 200:
+                found = parse_webnovel(body.decode("utf-8", "replace"), webnovel)
+                if found.state == "OK":
+                    return _from_extraction(found, item.latest_chapter or item.current_chapter)
+            if _challenge(status, body, headers):
+                return CheckResult("BLOCKED", "WEBNOVEL", detail="Likely browser challenge; browser fetch unavailable or failed.")
+            if status >= 400:
+                return CheckResult("FAILED", "WEBNOVEL", detail=f"HTTP {status}")
+            return _from_extraction(parse_webnovel(body.decode("utf-8", "replace"), webnovel),
+                                    item.latest_chapter or item.current_chapter)
+        except BrowserFetchError as exc:
+            return CheckResult("FAILED", "WEBNOVEL", detail=str(exc)[:200])
+        except (httpx.RequestError, UnsafeSource, ValueError) as exc:
+            return CheckResult("FAILED", "WEBNOVEL", detail=str(exc)[:200])
     if series and override in {None, "FREEWEBNOVEL"}:
         try:
             status, _, body, headers = await _checker_get(series, purpose="SITE_SCRAPER")
@@ -190,7 +286,7 @@ async def check_source(item, config) -> CheckResult:
             result = CheckResult("UNSUPPORTED", "TOC_SCRAPER", detail="ToC URL missing")
         else:
             try:
-                found = await extract_toc(item.toc_url, examples=parse_toc_examples(getattr(item, "toc_examples_json", None)),
+                found = await extract_toc(item.toc_url, examples=_toc_examples_for_item(item),
                                           row_class=getattr(item, "toc_row_class", None),
                                           preferred_group=getattr(item, "preferred_group", None),
                                           confirmed_latest_page_url=getattr(item, "toc_latest_page_url", None),
@@ -204,6 +300,9 @@ async def check_source(item, config) -> CheckResult:
         if method == "TOC_SCRAPER" or result.outcome != "UNSUPPORTED":
             return result
 
+    if webnovel or royalroad or scribblehub:
+        return CheckResult("UNSUPPORTED", "INCREMENTAL_PROBE",
+                           detail="Site chapter IDs are opaque; use the dedicated site checker.")
     from services.pattern_detection import unsafe_chapter_template
     if unsafe_chapter_template(item.url_template):
         return CheckResult("UNSUPPORTED", "INCREMENTAL_PROBE",

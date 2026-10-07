@@ -7,6 +7,8 @@ import type { TocExtractionPreview } from '@/types/api'
 
 interface Props {
   tocUrl: string
+  chapterExampleUrl?: string
+  fallbackChapterUrl?: string
   strategyOverride: string
   chapterRegex: string
   onStrategyChange: (value: string) => void
@@ -22,7 +24,7 @@ interface Props {
 }
 
 export function TocExtractionPanel({
-  tocUrl, strategyOverride, chapterRegex, onStrategyChange, exampleUrls, setExampleUrls, rowHtml, setRowHtml,
+  tocUrl, chapterExampleUrl, fallbackChapterUrl, strategyOverride, chapterRegex, onStrategyChange, exampleUrls, setExampleUrls, rowHtml, setRowHtml,
   preferredGroup, setPreferredGroup, onApply,
   savedRowClass, onClearRowClass,
 }: Props) {
@@ -38,9 +40,11 @@ export function TocExtractionPanel({
     setError('')
     setPreview(null)
     try {
+      const hints = [...new Set([chapterExampleUrl?.trim(), ...exampleUrls.map((url) => url.trim()),
+        fallbackChapterUrl?.trim()].filter((url): url is string => Boolean(url)))].slice(0, 2)
       const result = await post<TocExtractionPreview>('/tools/toc-preview', {
         url: tocUrl.trim(),
-        example_urls: exampleUrls.map((url) => url.trim()).filter(Boolean),
+        example_urls: hints,
         row_html: rowHtml.trim() || null,
         preferred_group: preferredGroup || null,
         strategy_override: strategyOverride,
@@ -56,14 +60,14 @@ export function TocExtractionPanel({
 
   return <div className="space-y-3 rounded-md border border-border p-3 text-xs">
     <div className="font-medium">Test selected checker</div>
-    <p className="text-muted-foreground">Tests the method selected above. Chapter examples are optional guidance for a generic ToC page with visible chapter links; they cannot make a page reveal links it does not contain.</p>
+    <p className="text-muted-foreground">Tests the method selected above. The advanced chapter URL example is used first to identify matching links; a saved URL template is used when no newer example replaces it. Examples cannot make a page reveal links it does not contain.</p>
     {chapterRegex.trim() && <p className="text-muted-foreground">Generic ToC extraction will use your chapter URL regex: <code>{chapterRegex}</code></p>}
     {genericComix && <div className="space-y-2 rounded border border-amber-500/40 p-2 text-amber-500">
       <p>Comix loads its chapter list separately. The generic ToC scanner will see an empty list. Use the Comix site checker for this series.</p>
       <Button type="button" size="sm" variant="outline" onClick={() => { onStrategyChange('COMIX'); setPreview(null) }}>Use Comix checker</Button>
     </div>}
-    {[0, 1].map((index) => <div key={index} className="space-y-1">
-      <Label htmlFor={`toc-example-${index}`}>Example chapter link {index + 1} (optional)</Label>
+    {(chapterExampleUrl?.trim() ? [0] : [0, 1]).map((index) => <div key={index} className="space-y-1">
+      <Label htmlFor={`toc-example-${index}`}>{chapterExampleUrl?.trim() ? 'Additional chapter link' : `Example chapter link ${index + 1}`} (optional)</Label>
       <Input id={`toc-example-${index}`} type="url" value={exampleUrls[index] ?? ''}
         placeholder="https://example.com/series/chapter-63"
         onChange={(event) => { setExampleUrls([0, 1].map((slot) => slot === index ? event.target.value : exampleUrls[slot] ?? '')); setPreview(null) }} />

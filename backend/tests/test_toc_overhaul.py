@@ -16,6 +16,57 @@ from services.pattern_detection import detect_pattern, unsafe_chapter_template
 
 BASE = "https://comix.to/title/39w1n-the-mating-of-elves"
 WEBTOONS = "https://www.webtoons.com/en/super-hero/unordinary/list?title_no=679"
+SIBLING_TOC = "https://hentai20.io/manga/i-became-a-pornhwa-npc/"
+SIBLING_EXAMPLE = "https://hentai20.io/i-became-a-pornhwa-npc-chapter-75/"
+
+
+def test_generic_toc_accepts_exact_series_slug_sibling_chapters():
+    html = (Path(__file__).parent / "fixtures" / "sibling_chapter_toc.html").read_text()
+    assert parse_toc(html, SIBLING_TOC).state == "EMPTY"
+    found = parse_toc(html, SIBLING_TOC, examples=[SIBLING_EXAMPLE])
+    assert (found.state, found.latest.chapter, len(found.links)) == ("OK", "80", 2)
+    assert found.latest.url == "https://hentai20.io/i-became-a-pornhwa-npc-chapter-80/"
+    hinted = parse_toc(html, SIBLING_TOC, examples=[SIBLING_EXAMPLE], row_class="chbox", chapter_regex=r"chapter-(\d+)")
+    assert (hinted.state, hinted.latest.chapter, len(hinted.links)) == ("OK", "80", 2)
+    assert parse_toc(html, SIBLING_TOC, examples=["https://hentai20.io/other-series-chapter-75/"]).state == "EMPTY"
+
+
+def test_hentai20_example_guides_preview_and_saved_checks(monkeypatch):
+    html = (Path(__file__).parent / "fixtures" / "sibling_chapter_toc.html").read_text()
+
+    async def valid(_url):
+        return None
+
+    async def get(url, **_kwargs):
+        assert url == SIBLING_TOC
+        return 200, url, html.encode(), {}
+
+    monkeypatch.setattr(tools, "validate_public_url", valid)
+    monkeypatch.setattr(selector, "_checker_get", get)
+    preview = asyncio.run(tools.toc_preview(tools.TocPreviewInput(
+        url=SIBLING_TOC, strategy_override="TOC_SCRAPER", example_urls=[SIBLING_EXAMPLE])))
+    assert (preview["state"], preview["latest_chapter"], preview["latest_url"]) == (
+        "OK", "80", "https://hentai20.io/i-became-a-pornhwa-npc-chapter-80/")
+    # Existing items may have the example-derived template but no saved ToC hint.
+    old_item = SimpleNamespace(series_url=None, original_url=SIBLING_TOC,
+                               strategy_override="TOC_SCRAPER", check_strategy="TOC_SCRAPER",
+                               toc_url=SIBLING_TOC,
+                               url_template="https://hentai20.io/i-became-a-pornhwa-npc-chapter-{n}/",
+                               latest_chapter="79", current_chapter="75", preferred_group=None,
+                               toc_examples_json=None, toc_row_class=None, toc_latest_page_url=None,
+                               chapter_regex=None, pattern_source="AUTO")
+    result = asyncio.run(selector.check_source(old_item, CheckerConfig()))
+    assert (result.outcome, result.chapter, result.chapter_url) == (
+        "NEW", "80", "https://hentai20.io/i-became-a-pornhwa-npc-chapter-80/")
+
+
+def test_example_url_scope_keeps_series_query_identity():
+    toc = "https://reader.example/manga/story/"
+    html = '''<a href="/story-chapter-80/?series=42">Chapter 80</a>
+    <a href="/story-chapter-900/?series=99">Chapter 900</a>
+    <a href="/story-chapter-901/">Chapter 901</a>'''
+    found = parse_toc(html, toc, examples=["https://reader.example/story-chapter-75/?series=42"])
+    assert (found.state, found.latest.chapter, len(found.links)) == ("OK", "80", 1)
 
 
 def test_webtoons_list_uses_visible_episode_not_internal_id(monkeypatch):
@@ -173,6 +224,22 @@ def test_ascending_pagination_fetches_last_page_and_never_probes(monkeypatch):
     assert result.toc_latest_page_url == "https://example.com/series?page=3"
 
 
+def test_descending_first_page_does_not_fetch_older_pages(monkeypatch):
+    source = "https://example.com/series"
+    html = '''<a href="/series/chapter-80">Chapter 80</a>
+    <a href="/series/chapter-79">Chapter 79</a><a href="?page=3">Older</a>'''
+    calls = []
+
+    async def get(url, **_kwargs):
+        calls.append(url)
+        assert url == source
+        return 200, url, html.encode(), {}
+
+    monkeypatch.setattr(selector, "_checker_get", get)
+    found = asyncio.run(selector.extract_toc(source))
+    assert (found.state, found.latest.chapter, calls) == ("OK", "80", [source])
+
+
 def test_confirmed_latest_page_is_one_fetch_until_rollover(monkeypatch):
     calls = []
     page3 = '<a href="/series/chapter-65">Chapter 65</a><a href="/series/chapter-64">Chapter 64</a>'
@@ -244,7 +311,8 @@ def test_toc_preview_uses_selected_method_on_comix(monkeypatch):
     monkeypatch.setattr(tools, "extract_toc", generic)
     dedicated = asyncio.run(tools.toc_preview(tools.TocPreviewInput(url=BASE)))
     generic_result = asyncio.run(tools.toc_preview(tools.TocPreviewInput(
-        url=BASE, strategy_override="TOC_SCRAPER", example_urls=[BASE + "/11434031-chapter-73"])))
+        url=BASE, strategy_override="TOC_SCRAPER", example_urls=[
+            BASE + "/11434031-chapter-73", BASE + "/11384288-chapter-71"])))
     assert (dedicated["state"], dedicated["method"]) == ("OK", "COMIX")
     assert (generic_result["state"], generic_result["method"]) == ("EMPTY", "TOC_SCRAPER")
     assert any("Choose Automatic or Comix" in warning for warning in generic_result["warnings"])

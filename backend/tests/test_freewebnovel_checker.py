@@ -13,17 +13,19 @@ from services import covers
 
 
 @pytest.mark.parametrize("slug,title,latest,cover", [
+    ("harem-system-in-a-fantasy-world", "Harem System in a Fantasy World", 644, None),
     ("as-a-mafia-boss-i-refuse-to-be-an-extra", "As A Mafia Boss, I Refuse To Be An Extra", 546,
      "/files/article/image/12/12656/12656s.jpg"),
     ("my-taboo-harem", "My Taboo Harem!", 1314,
      "/files/article/image/12/12126/12126s.jpg"),
+    ("reborn-as-the-genius-son-of-the-richest-family", "Reborn as the Genius Son of the Richest Family", 1416, None),
 ])
 def test_page_metadata_latest_section_and_paginated_list(slug, title, latest, cover):
     base = f"https://freewebnovel.com/novel/{slug}"
     # The actual pages contain these same signals. The first 40 ToC entries
     # and unrelated sidebar numbers must never determine the latest chapter.
     html = f'''<head><meta property="og:title" content="{title}">
-    <meta property="og:image" content="https://freewebnovel.com{cover}">
+    {f'<meta property="og:image" content="https://freewebnovel.com{cover}">' if cover else ''}
     <meta property="og:novel:lastest_chapter_name" content="Chapter {latest}: Latest">
     <meta property="og:novel:lastest_chapter_url" content="{base}/chapter-{latest}"></head>
     <div id="indexListPage" data-total-chapters="{latest}">
@@ -35,7 +37,7 @@ def test_page_metadata_latest_section_and_paginated_list(slug, title, latest, co
       <div class="col-slide"><a href="/novel/other-story/chapter-5682">Chapter 5682</a></div>
     </div>'''
     found = parse_freewebnovel(html, base)
-    assert found == {"title": title, "cover_url": "https://freewebnovel.com" + cover,
+    assert found == {"title": title, "cover_url": "https://freewebnovel.com" + cover if cover else None,
                      "chapter": str(latest), "chapter_url": f"{base}/chapter-{latest}"}
 
 

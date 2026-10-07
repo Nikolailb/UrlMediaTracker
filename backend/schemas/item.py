@@ -20,7 +20,7 @@ class ItemCreate(BaseModel):
     category: ItemCategory | None = None
     is_sensitive: bool = False
     note: str | None = Field(default=None, max_length=2000)
-    strategy_override: Literal["FREEWEBNOVEL", "COMIX", "TOC_SCRAPER", "INCREMENTAL_PROBE", "TOC_THEN_PROBE"] | None = None
+    strategy_override: Literal["FREEWEBNOVEL", "COMIX", "WEBNOVEL", "ROYALROAD", "SCRIBBLEHUB", "TOC_SCRAPER", "INCREMENTAL_PROBE", "TOC_THEN_PROBE"] | None = None
     current_chapter: str | None = None
     latest_chapter: str | None = None
     preferred_group: str | None = Field(default=None, max_length=200)
@@ -62,7 +62,7 @@ class ItemUpdate(BaseModel):
     is_sensitive: bool | None = None
     note: str | None = Field(default=None, max_length=2000)
     latest_chapter: str | None = None
-    strategy_override: Literal["FREEWEBNOVEL", "COMIX", "TOC_SCRAPER", "INCREMENTAL_PROBE", "TOC_THEN_PROBE"] | None = None
+    strategy_override: Literal["FREEWEBNOVEL", "COMIX", "WEBNOVEL", "ROYALROAD", "SCRIBBLEHUB", "TOC_SCRAPER", "INCREMENTAL_PROBE", "TOC_THEN_PROBE"] | None = None
     preferred_group: str | None = Field(default=None, max_length=200)
     toc_example_urls: list[str] | None = Field(default=None, max_length=2)
     toc_row_html: str | None = Field(default=None, max_length=5000)

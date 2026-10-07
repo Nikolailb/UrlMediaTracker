@@ -44,6 +44,9 @@ const STRATEGIES: {
 }[] = [
   { value: 'AUTO', label: 'Automatic', description: 'Prefer a dedicated site checker when available.' },
   { value: 'COMIX', label: 'Comix site checker', description: 'Reads Comix series metadata and optional group links.' },
+  { value: 'WEBNOVEL', label: 'WebNovel site checker', description: 'Reads WebNovel book catalog with optional browser fallback.' },
+  { value: 'ROYALROAD', label: 'Royal Road site checker', description: 'Reads the fiction catalog by stable fiction ID.' },
+  { value: 'SCRIBBLEHUB', label: 'Scribble Hub site checker', description: 'Reads the newest series ToC page and its explicit release order.' },
   {
     value: "INCREMENTAL_PROBE",
     label: "Sequential URL probing",
@@ -284,7 +287,7 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {STRATEGIES.filter((s) => s.value !== 'COMIX' || item?.original_url.includes('comix.to')).map((s) => (
+                    {STRATEGIES.filter((s) => (s.value !== 'COMIX' || item?.original_url.includes('comix.to')) && (s.value !== 'WEBNOVEL' || item?.original_url.includes('webnovel.com')) && (s.value !== 'ROYALROAD' || item?.original_url.includes('royalroad.com')) && (s.value !== 'SCRIBBLEHUB' || item?.original_url.includes('scribblehub.com'))).map((s) => (
                       <SelectItem key={s.value} value={s.value}>
                         {s.label}
                       </SelectItem>
@@ -386,7 +389,9 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
                   <p className="text-[11px] text-muted-foreground break-all">Saved detected regex: <span className="font-mono">{item.chapter_regex}</span></p>
                 )}
               </div>
-              <TocExtractionPanel key={`${checkStrategy}:${tocUrl.trim() || item?.series_url || item?.original_url || ''}:${manualRegex}`} tocUrl={tocUrl.trim() || item?.series_url || item?.original_url || ''}
+              <TocExtractionPanel key={`${checkStrategy}:${tocUrl.trim() || item?.series_url || item?.original_url || ''}:${chapterExampleUrl}:${manualRegex}`} tocUrl={tocUrl.trim() || item?.series_url || item?.original_url || ''}
+                chapterExampleUrl={chapterExampleUrl}
+                fallbackChapterUrl={item?.url_template?.replace('{n}', item?.latest_chapter || item?.current_chapter || '1') || ''}
                 strategyOverride={checkStrategy} chapterRegex={manualRegex} onStrategyChange={setCheckStrategy}
                 exampleUrls={tocExamples} setExampleUrls={setTocExamples}
                 rowHtml={tocRowHtml} setRowHtml={setTocRowHtml}

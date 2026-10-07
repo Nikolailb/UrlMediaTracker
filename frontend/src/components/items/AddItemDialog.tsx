@@ -259,6 +259,9 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
                       <SelectItem value="AUTO">Automatic (recommended)</SelectItem>
                       {sourcePreview?.checker === 'FREEWEBNOVEL' && <SelectItem value="FREEWEBNOVEL">FreeWebNovel site checker</SelectItem>}
                       {sourcePreview?.checker === 'COMIX' && <SelectItem value="COMIX">Comix site checker</SelectItem>}
+                      {sourcePreview?.checker === 'WEBNOVEL' && <SelectItem value="WEBNOVEL">WebNovel site checker</SelectItem>}
+                      {sourcePreview?.checker === 'ROYALROAD' && <SelectItem value="ROYALROAD">Royal Road site checker</SelectItem>}
+                      {sourcePreview?.checker === 'SCRIBBLEHUB' && <SelectItem value="SCRIBBLEHUB">Scribble Hub site checker</SelectItem>}
                       <SelectItem value="TOC_SCRAPER">Table of contents scan</SelectItem>
                       <SelectItem value="INCREMENTAL_PROBE">Sequential URL probing</SelectItem>
                       <SelectItem value="TOC_THEN_PROBE">ToC, then probe if unsupported</SelectItem>
@@ -271,14 +274,14 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
                   <Input id="regex" placeholder="chapter-(\d+)" value={manualRegex} onChange={(e) => setManualRegex(e.target.value)} className="font-mono text-xs" />
                   <p className="text-xs text-muted-foreground">Use only when the chapter URL pattern needs an override. A series page does not need a regex for a dedicated site checker.</p>
                 </div>
-            {['FREEWEBNOVEL', 'COMIX'].includes(sourcePreview?.checker ?? '') && strategyOverride === 'AUTO' && <p className="text-xs text-muted-foreground">The dedicated checker needs no chapter URL regex.</p>}
-            {(!['FREEWEBNOVEL', 'COMIX'].includes(sourcePreview?.checker ?? '') || !['AUTO', 'FREEWEBNOVEL', 'COMIX'].includes(strategyOverride)) && detect.isPending && (
+            {['FREEWEBNOVEL', 'COMIX', 'WEBNOVEL', 'ROYALROAD', 'SCRIBBLEHUB'].includes(sourcePreview?.checker ?? '') && strategyOverride === 'AUTO' && <p className="text-xs text-muted-foreground">The dedicated checker needs no chapter URL regex.</p>}
+            {(!['FREEWEBNOVEL', 'COMIX', 'WEBNOVEL', 'ROYALROAD', 'SCRIBBLEHUB'].includes(sourcePreview?.checker ?? '') || !['AUTO', 'FREEWEBNOVEL', 'COMIX', 'WEBNOVEL', 'ROYALROAD', 'SCRIBBLEHUB'].includes(strategyOverride)) && detect.isPending && (
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 Detecting pattern…
               </div>
             )}
-            {(!['FREEWEBNOVEL', 'COMIX'].includes(sourcePreview?.checker ?? '') || !['AUTO', 'FREEWEBNOVEL', 'COMIX'].includes(strategyOverride)) && preview && (
+            {(!['FREEWEBNOVEL', 'COMIX', 'WEBNOVEL', 'ROYALROAD', 'SCRIBBLEHUB'].includes(sourcePreview?.checker ?? '') || !['AUTO', 'FREEWEBNOVEL', 'COMIX', 'WEBNOVEL', 'ROYALROAD', 'SCRIBBLEHUB'].includes(strategyOverride)) && preview && (
               <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2 text-xs">
                 <div className="flex items-center gap-2 font-medium">
                   <Sparkles className="h-3.5 w-3.5 text-primary" />
@@ -319,7 +322,7 @@ export function AddItemDialog({ open, onOpenChange }: AddItemDialogProps) {
               </div>
             )}
               </div>
-              <TocExtractionPanel key={`${strategyOverride}:${tocUrl.trim() || url.trim()}:${manualRegex}`} tocUrl={tocUrl.trim() || url.trim()} strategyOverride={strategyOverride} chapterRegex={manualRegex} onStrategyChange={setStrategyOverride} exampleUrls={tocExamples}
+              <TocExtractionPanel key={`${strategyOverride}:${tocUrl.trim() || url.trim()}:${chapterExampleUrl}:${manualRegex}`} tocUrl={tocUrl.trim() || url.trim()} chapterExampleUrl={chapterExampleUrl} strategyOverride={strategyOverride} chapterRegex={manualRegex} onStrategyChange={setStrategyOverride} exampleUrls={tocExamples}
                 setExampleUrls={setTocExamples} rowHtml={tocRowHtml} setRowHtml={setTocRowHtml}
                 preferredGroup={preferredGroup} setPreferredGroup={setPreferredGroup}
                 onApply={(found) => {

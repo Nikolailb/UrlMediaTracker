@@ -6,6 +6,7 @@ from html.parser import HTMLParser
 from urllib.parse import parse_qs, urljoin, urlsplit
 
 from services.checking.results import ChapterLink, Extraction
+from services.pattern_detection import detect_pattern
 
 _NUMBER = re.compile(r"\b(?:chapter|chap\.?|ch\.?|episode|ep\.?)\s*[#.: -]*\s*(\d+(?:\.\d+)?[a-z]?)\b", re.I)
 _BAD_REGION = {"recommend", "related", "sidebar", "popular", "footer", "header", "comment"}
@@ -75,6 +76,33 @@ def row_class_from_html(snippet: str | None) -> str | None:
     return None
 
 
+def _example_path_patterns(examples: list[str], host: str, chapter_regex: str | None) -> list[tuple]:
+    """Turn explicit chapter URLs into URL shapes; never derive these from the ToC path."""
+    patterns = []
+    for example in examples:
+        if (urlsplit(example).hostname or "").lower() != host:
+            continue
+        detected = detect_pattern(example, chapter_regex)
+        if not detected.url_template:
+            continue
+        template = urlsplit(detected.url_template)
+        path = template.path.rstrip("/")
+        if path.count("{n}") != 1:
+            continue
+        expression = re.escape(path).replace(r"\{n\}", r"\d+(?:\.\d+)?[a-z]?")
+        patterns.append((re.compile(r"^" + expression + r"$", re.I),
+                         template.scheme, template.netloc.lower(), parse_qs(template.query)))
+    return patterns
+
+
+def _matches_example(parts, patterns: list[tuple]) -> bool:
+    query = parse_qs(parts.query)
+    return any(parts.scheme == scheme and parts.netloc.lower() == netloc and
+               pattern.fullmatch(parts.path.rstrip("/")) and
+               all(query.get(key) == values for key, values in required_query.items())
+               for pattern, scheme, netloc, required_query in patterns)
+
+
 def parse_toc(html: str, toc_url: str, *, examples: list[str] | None = None,
               row_class: str | None = None, preferred_group: str | None = None,
               chapter_regex: str | None = None) -> Extraction:
@@ -105,6 +133,7 @@ def parse_toc(html: str, toc_url: str, *, examples: list[str] | None = None,
         if parent == series_path or parent.startswith(series_path + "/"):
             example_paths.append(parent)
     prefix = series_path if not example_paths else min(example_paths, key=len)
+    example_patterns = _example_path_patterns(examples or [], host, chapter_regex)
     candidates: list[ChapterLink] = []
     conflicts = 0
     for href, label, parents in page.anchors:
@@ -112,7 +141,7 @@ def parse_toc(html: str, toc_url: str, *, examples: list[str] | None = None,
         parts = urlsplit(absolute)
         if parts.scheme not in {"http", "https"} or (parts.hostname or "").lower() != host:
             continue
-        if not parts.path.startswith(prefix + "/"):
+        if not (parts.path.startswith(prefix + "/") or _matches_example(parts, example_patterns)):
             continue
         if query_identity_conflicts(source.query, parts.query):
             continue
