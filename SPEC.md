@@ -124,3 +124,9 @@ Acceptance: the saved sample has 126 ordered releases even though the latest tit
 New entries from FreeWebNovel, WebNovel, Royal Road, and Scribble Hub default to the existing `Novel` category. The add form shows the suggestion after source preview, before saving. The user can choose another category or explicitly choose no category. The API applies the same default when a create request omits `category`, but respects an explicit category or `null`. Existing entries are not reclassified, and other sites have no new default.
 
 Acceptance: each of the four recognized site URL shapes creates a `Novel` item when category is omitted; explicit `Light Novel` and explicit `null` are preserved; an unrelated site remains uncategorized. The add form preserves a category the user has deliberately selected when the URL is previewed again.
+
+### REQ-021 — Tracker identity assets
+
+Use one recognizable book-and-bookmark mark for the application header, browser favicon, and installable web manifest. Provide a transparent icon and a separate dark card background in the repository for manual upload to KeiHub. Artwork must require no remote image service at runtime.
+
+Acceptance: the favicon contains 16, 32, 48, and 64 pixel sizes; the web manifest includes 192 and 512 pixel PNGs; the hub icon has a transparent alpha channel and fits within 512 × 512 pixels; the card background fits within 1600 × 1000 pixels; frontend build and lint pass. Hub upload remains a separate manual action.

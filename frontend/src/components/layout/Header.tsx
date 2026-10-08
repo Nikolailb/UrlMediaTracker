@@ -1,4 +1,4 @@
-import { BookMarked, RefreshCw, Eye, EyeOff, LogOut, UserPlus } from "lucide-react";
+import { RefreshCw, Eye, EyeOff, LogOut, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "./ThemeToggle";
 import { useCheckAll } from "@/hooks/useItems";
@@ -24,7 +24,7 @@ export function Header() {
     <header className="sticky top-0 z-40 w-full border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="mx-auto flex h-14 w-full max-w-[110rem] items-center justify-between px-2 sm:px-6 lg:px-8 2xl:px-10">
         <div className="flex items-center gap-2 font-semibold text-foreground">
-          <BookMarked className="h-5 w-5 text-primary" />
+          <img src="/icon-192.png" alt="" className="h-6 w-6" />
           <span className="hidden sm:inline">Chapter Tracker</span>
         </div>
 

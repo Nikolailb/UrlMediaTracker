@@ -11,6 +11,9 @@ A self-hosted reading queue for serialized novels, comics, manga, and webtoons. 
 - `backend/`: FastAPI, SQLAlchemy, Alembic, APScheduler, SQLite.
 - `frontend/`: React, TypeScript, Vite, Tailwind CSS, TanStack Query.
 - `backend/tests/`: backend behavior tests.
+- `assets/`: transparent tracker icon and optional KeiHub card background for manual upload. The frontend serves matching favicon and web manifest icons from `frontend/public/`.
+
+For the KeiHub tracker card, upload `assets/chapter-tracker-icon.png` as its icon and, if desired, `assets/chapter-tracker-keihub-card.webp` as its background. These local assets are ready for the hub's image size limits; assigning them in KeiHub is a separate step.
 
 Use Python 3.12 and Node.js 24. Create `backend/env`, install `backend/requirements.txt` and `pytest`, then run `alembic upgrade head` from `backend`. Run `python -m admin_bootstrap` from `backend` to set the first admin password; existing entries are assigned to that account. Run `npm ci` at the root and in `frontend`. `npm run dev` starts Uvicorn at `http://localhost:8000` and Vite at `http://localhost:5173`; API docs are at `/docs`. Copy `backend/.env.example` to `backend/.env` as needed. Run backend tests from `backend` with `python -m pytest tests`; run `npm --prefix frontend run build` and `npm --prefix frontend run lint`.
 

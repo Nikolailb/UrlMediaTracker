@@ -97,3 +97,7 @@ Use the numeric series ID as the source key and the first ToC page's explicit ro
 ## D-029 — Editable Novel default (2026-10-07)
 
 Suggest the existing `Novel` category for new FreeWebNovel, WebNovel, Royal Road, and Scribble Hub entries using their URL recognizers. A user may choose any category or no category. API omission receives the default; explicit `null` means none. Keep existing records and imports unchanged. Automatically reclassifying old entries or inferring categories from scraped titles was rejected because those would overwrite personal organization. REQ-020.
+
+## D-030 — One mark across tracker and hub (2026-10-08)
+
+Use a generated open-book and blue bookmark mark as the common tracker identity. Derive the favicon and manifest PNGs from the transparent source so they remain visually consistent. Keep a separate subdued dark card background for optional KeiHub upload. Store these as static files and leave hub assignment to the owner; the tracker does not need access to KeiHub's database or upload API. REQ-021.
