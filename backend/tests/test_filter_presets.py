@@ -47,6 +47,7 @@ def test_presets_are_scoped_to_selected_library_and_portable(monkeypatch):
         assert defaults[0]["categories"] == ["Manhwa", "Manhua", "Manga", "Webtoon", "Pornhwa", "Comic", "Anime"]
         assert defaults[1]["categories"] == ["Novel", "Light Novel"]
         assert defaults[2]["unread_only"] is True
+        assert all(row["statuses"] == ["ONGOING", "COMPLETED"] for row in defaults)
 
         payload = {"name": "Weekend", "categories": ["Manga", "Webtoon"], "unread_only": True, "include_inactive": False, "sort_key": "title", "sort_dir": "asc"}
         response = admin_client.post("/filter-presets", json=payload, headers=headers)
@@ -70,7 +71,7 @@ def test_presets_are_scoped_to_selected_library_and_portable(monkeypatch):
         assert exported.status_code == 200
         with zipfile.ZipFile(io.BytesIO(exported.content)) as archive:
             saved = json.loads(archive.read("presets.json"))
-        assert saved == [{"name": "WEEKEND", "categories": ["Manga", "Webtoon"], "unread_only": True, "include_inactive": False, "sort_key": "title", "sort_dir": "asc"}]
+        assert saved == [{"name": "WEEKEND", "categories": ["Manga", "Webtoon"], "unread_only": True, "include_inactive": False, "statuses": ["ONGOING", "COMPLETED"], "sort_key": "title", "sort_dir": "asc"}]
         imported = admin_client.post("/archive/import", files={"file": ("account.zip", exported.content, "application/zip")}, headers=headers)
         assert imported.status_code == 201
         assert len(admin_client.get("/filter-presets", headers=headers).json()) == 4

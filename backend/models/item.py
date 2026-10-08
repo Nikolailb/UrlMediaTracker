@@ -38,6 +38,13 @@ class ItemCategory(str, PyEnum):
     ANIME = "Anime"
 
 
+class ItemStatus(str, PyEnum):
+    ONGOING = "ONGOING"
+    PAUSED = "PAUSED"
+    COMPLETED = "COMPLETED"
+    FINISHED = "FINISHED"
+
+
 class TrackedItem(Base):
     __tablename__ = "tracked_items"
 
@@ -100,6 +107,8 @@ class TrackedItem(Base):
         DateTime(timezone=True), nullable=True
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # REQ-022: the lifecycle is authoritative; is_active remains for legacy readers.
+    status: Mapped[str] = mapped_column(String(20), default=ItemStatus.ONGOING.value, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)

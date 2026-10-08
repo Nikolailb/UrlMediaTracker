@@ -28,6 +28,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/auth/context'
 import { usePatternDetect } from '@/hooks/usePatternDetect'
 import { TocExtractionPanel } from './TocExtractionPanel'
+import { caughtUp } from '@/lib/item-status'
 import { hasAmbiguousChapterIds } from '@/lib/chapterUrls'
 
 interface EditItemDialogProps {
@@ -77,7 +78,7 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
   const [currentChapter, setCurrentChapter] = useState(
     item?.current_chapter ?? "",
   );
-  const [isActive, setIsActive] = useState(item?.is_active ?? true);
+  const [itemStatus, setItemStatus] = useState(item?.status ?? 'ONGOING');
   const [tocUrl, setTocUrl] = useState(item?.toc_url ?? "");
   const [chapterExampleUrl, setChapterExampleUrl] = useState("");
   const [tocExamples, setTocExamples] = useState<string[]>(item?.toc_example_urls ?? ['', '']);
@@ -112,7 +113,7 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
           manual_regex: manualRegex.trim() || null,
           check_interval_min: parseInt(interval) || 360,
           current_chapter: currentChapter.trim() || null,
-          is_active: isActive,
+          status: itemStatus,
           toc_url: tocUrl.trim() || null,
           category: category || null,
           strategy_override: checkStrategy === 'AUTO' ? null : checkStrategy,
@@ -136,8 +137,8 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
         toast.success('Item updated. Checking method is unchanged.');
         return;
       }
-      if (!saved.is_active) {
-        toast.success('Checking settings saved. This item is paused.');
+      if (saved.status !== 'ONGOING') {
+        toast.success(`Checking settings saved. ${saved.status.toLowerCase()} items are not polled automatically.`);
         return;
       }
       toast.info(`Checking settings saved. Testing ${saved.strategy_override ?? 'automatic'} now…`);
@@ -262,15 +263,18 @@ export function EditItemDialog({ item, onOpenChange }: EditItemDialogProps) {
                 />
               </div>
 
-              <div className="flex items-center gap-2">
-                <input
-                  id="edit-active"
-                  type="checkbox"
-                  checked={isActive}
-                  onChange={(e) => setIsActive(e.target.checked)}
-                  className="h-4 w-4 rounded border-border accent-primary"
-                />
-                <Label htmlFor="edit-active">Active (check for updates)</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-status">Status</Label>
+                <Select value={itemStatus} onValueChange={(value) => setItemStatus(value as typeof itemStatus)}>
+                  <SelectTrigger id="edit-status"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ONGOING">Ongoing · check for updates</SelectItem>
+                    <SelectItem value="PAUSED">Paused · stop checking temporarily</SelectItem>
+                    <SelectItem value="COMPLETED">Completed · publishing ended</SelectItem>
+                    {(item?.status === 'FINISHED' || (item?.status === 'COMPLETED' && caughtUp(currentChapter, latestChapter))) && <SelectItem value="FINISHED">Finished · I read everything</SelectItem>}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Finish is available after a Completed item is caught up. Completed and Finished items can still be checked manually.</p>
               </div>
             </div>
           )}

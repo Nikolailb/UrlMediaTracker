@@ -5,6 +5,7 @@ import { RelativeTime } from '@/components/ui/relative-time'
 import type { ItemRead } from '@/types/api'
 import { ReadingActions } from './ReadingActions'
 import { useAuth } from '@/auth/context'
+import { statusLabel } from '@/lib/item-status'
 
 interface ItemCardsProps {
   items: ItemRead[]
@@ -55,8 +56,8 @@ export function ItemCards({ items, onEdit, onDelete, onHistory }: ItemCardsProps
                 <Badge variant="outline" className="text-[10px]">{item.category}</Badge>
               )}
               {item.is_sensitive && <Badge variant="secondary" className="text-[10px]">Sensitive</Badge>}
-              <Badge variant={item.is_active ? 'success' : 'secondary'} className="text-[10px]">
-                {item.is_active ? 'Active' : 'Paused'}
+              <Badge variant={item.status === 'ONGOING' ? 'success' : 'secondary'} className="text-[10px]">
+                {statusLabel[item.status]}
               </Badge>
             </div>
           </div>

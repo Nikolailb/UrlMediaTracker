@@ -33,8 +33,9 @@ import { itemsApi } from "@/api/items";
 import { chapterToFloat } from "@/lib/utils";
 import { toast } from "sonner";
 import type { ItemRead } from "@/types/api";
-import { ITEM_CATEGORIES } from "@/types/api";
-import type { FilterPreset, ItemCategory } from "@/types/api";
+import { ITEM_CATEGORIES, ITEM_STATUSES, QUEUE_STATUSES } from "@/types/api";
+import type { FilterPreset, ItemCategory, ItemStatus } from "@/types/api";
+import { statusLabel } from '@/lib/item-status'
 import { useFilterPresets } from '@/hooks/useFilterPresets'
 import { useAuth } from '@/auth/context'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -47,7 +48,8 @@ type SortKey =
   | "created_at"
   | "latest_chapter_at"
   | "last_checked_at"
-  | "has_unread";
+  | "has_unread"
+  | "status";
 type SortDir = "asc" | "desc";
 
 function useWindowWidth() {
@@ -81,7 +83,7 @@ function ItemListContent() {
   const [view, setView] = useState<'table' | 'cards'>(() => (localStorage.getItem('tracker-view') === 'cards' ? 'cards' : 'table'))
 
   const [search, setSearch] = useState("");
-  const [showInactive, setShowInactive] = useState(true);
+  const [statuses, setStatuses] = useState<ItemStatus[]>([...QUEUE_STATUSES]);
   const [showUnreadOnly, setShowUnreadOnly] = useState(false);
   const [categories, setCategories] = useState<ItemCategory[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>("latest_chapter_at");
@@ -103,12 +105,12 @@ function ItemListContent() {
   const importItems = useImportItems();
 
   const activePreset = presets.find((preset) => preset.id === activePresetId)
-  const initialPreset = useMemo(() => ({ categories, unread_only: showUnreadOnly, include_inactive: showInactive, sort_key: sortKey, sort_dir: sortDir }), [categories, showUnreadOnly, showInactive, sortKey, sortDir])
+  const initialPreset = useMemo(() => ({ categories, unread_only: showUnreadOnly, statuses, include_inactive: statuses.length === ITEM_STATUSES.length, sort_key: sortKey, sort_dir: sortDir }), [categories, showUnreadOnly, statuses, sortKey, sortDir])
 
   function applyPreset(preset: FilterPreset | null) {
     setCategories(preset?.categories ?? [])
     setShowUnreadOnly(preset?.unread_only ?? false)
-    setShowInactive(preset?.include_inactive ?? true)
+    setStatuses(preset?.statuses ?? [...QUEUE_STATUSES])
     setSortKey(preset?.sort_key ?? 'latest_chapter_at')
     setSortDir(preset?.sort_dir ?? 'desc')
     setActivePresetId(preset?.id ?? 'all')
@@ -123,7 +125,7 @@ function ItemListContent() {
   }
 
   function clearFilters() {
-    setShowInactive(true)
+    setStatuses([...QUEUE_STATUSES])
     setShowUnreadOnly(false)
     setCategories([])
     setSortKey('latest_chapter_at')
@@ -151,7 +153,7 @@ function ItemListContent() {
     if (!items) return [];
     let result = [...items];
 
-    if (!showInactive) result = result.filter((i) => i.is_active);
+    result = result.filter((i) => statuses.includes(i.status));
     if (showUnreadOnly) result = result.filter((i) => i.has_unread === true);
     if (categories.length)
       result = result.filter((i) => categories.includes(i.category as ItemCategory));
@@ -194,6 +196,9 @@ function ItemListContent() {
             (chapterToFloat(b.latest_chapter) -
               chapterToFloat(b.current_chapter));
           break;
+        case "status":
+          cmp = ITEM_STATUSES.indexOf(a.status) - ITEM_STATUSES.indexOf(b.status);
+          break;
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
@@ -202,7 +207,7 @@ function ItemListContent() {
   }, [
     items,
     search,
-    showInactive,
+    statuses,
     showUnreadOnly,
     categories,
     sortKey,
@@ -316,7 +321,7 @@ function ItemListContent() {
 
   const activeFilterCount =
     (showUnreadOnly ? 1 : 0) +
-    (!showInactive ? 1 : 0) +
+    (statuses.length !== QUEUE_STATUSES.length || !statuses.every((value) => QUEUE_STATUSES.includes(value)) ? 1 : 0) +
     (categories.length ? 1 : 0) +
     (sortKey !== 'latest_chapter_at' || sortDir !== 'desc' ? 1 : 0);
 
@@ -357,8 +362,13 @@ function ItemListContent() {
           </DialogHeader>
           <div className="space-y-5 text-sm">
             <div className="space-y-2">
-              <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={showInactive} onChange={(event) => { setShowInactive(event.target.checked); setPresetDirty(true) }} /> Show inactive items</label>
               <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={showUnreadOnly} onChange={(event) => { setShowUnreadOnly(event.target.checked); setPresetDirty(true) }} /> Unread only</label>
+            </div>
+            <div className="space-y-2">
+              <p className="font-medium">Statuses</p>
+              <div className="grid grid-cols-2 gap-2">
+                {ITEM_STATUSES.map((value) => <label key={value} className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={statuses.includes(value)} onChange={() => { setStatuses((previous) => previous.includes(value) ? previous.length > 1 ? previous.filter((entry) => entry !== value) : previous : [...previous, value]); setPresetDirty(true) }} />{statusLabel[value]}</label>)}
+              </div>
             </div>
             <div className="space-y-2">
               <p className="font-medium">Categories <span className="font-normal text-muted-foreground">(any selected; none means all)</span></p>
@@ -382,6 +392,7 @@ function ItemListContent() {
                     <SelectItem value="title">Title</SelectItem>
                     <SelectItem value="last_checked_at">Last checked</SelectItem>
                     <SelectItem value="has_unread">Unread gap</SelectItem>
+                    <SelectItem value="status">Status</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

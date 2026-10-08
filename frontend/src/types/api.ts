@@ -2,6 +2,9 @@ export type PatternSource = 'AUTO' | 'MANUAL'
 export type CheckStrategy = 'INCREMENTAL_PROBE' | 'TOC_SCRAPER' | 'TOC_THEN_PROBE'
 export type PatternConfidence = 'HIGH' | 'MEDIUM' | 'LOW'
 export type ItemCategory = 'Novel' | 'Light Novel' | 'Manhwa' | 'Manhua' | 'Manga' | 'Webtoon' | 'Pornhwa' | 'Comic' | 'Anime'
+export type ItemStatus = 'ONGOING' | 'PAUSED' | 'COMPLETED' | 'FINISHED'
+export const ITEM_STATUSES: ItemStatus[] = ['ONGOING', 'COMPLETED', 'PAUSED', 'FINISHED']
+export const QUEUE_STATUSES: ItemStatus[] = ['ONGOING', 'COMPLETED']
 export const ITEM_CATEGORIES: ItemCategory[] = ['Novel', 'Light Novel', 'Manhwa', 'Manhua', 'Manga', 'Webtoon', 'Pornhwa', 'Comic', 'Anime']
 
 export interface FilterPreset {
@@ -10,7 +13,8 @@ export interface FilterPreset {
   categories: ItemCategory[]
   unread_only: boolean
   include_inactive: boolean
-  sort_key: 'title' | 'created_at' | 'latest_chapter_at' | 'last_checked_at' | 'has_unread'
+  statuses: ItemStatus[]
+  sort_key: 'title' | 'created_at' | 'latest_chapter_at' | 'last_checked_at' | 'has_unread' | 'status'
   sort_dir: 'asc' | 'desc'
   builtin: boolean
 }
@@ -49,6 +53,7 @@ export interface ItemRead {
   consecutive_failures: number
   last_error: string | null
   is_active: boolean
+  status: ItemStatus
   created_at: string
   updated_at: string
   user_id: string | null
@@ -81,6 +86,7 @@ export interface ItemUpdate {
   check_interval_min?: number | null
   current_chapter?: string | null
   is_active?: boolean | null
+  status?: ItemStatus | null
   toc_url?: string | null
   check_strategy?: CheckStrategy | null
   category?: string | null

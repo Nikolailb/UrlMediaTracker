@@ -21,14 +21,14 @@ async def run_due_checks() -> None:
     """Find all active items that are due for a check and run them."""
     # Deferred imports prevent circular deps and ensure the app is fully initialised
     from database import SessionLocal  # noqa: PLC0415
-    from models.item import TrackedItem  # noqa: PLC0415
+    from models.item import ItemStatus, TrackedItem  # noqa: PLC0415
     from services.checking.orchestrator import check_item  # noqa: PLC0415
 
     db = SessionLocal()
     try:
         now = datetime.now(timezone.utc)
         items: list[TrackedItem] = (
-            db.query(TrackedItem).filter(TrackedItem.is_active.is_(True)).all()
+            db.query(TrackedItem).filter(TrackedItem.status == ItemStatus.ONGOING.value).all()
         )
 
         due = [

@@ -67,7 +67,7 @@ function FilterPresetEditor({ onOpenChange, preset, initial, onSaved, onDeleted 
           </label>
           <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm space-y-1">
             <p>Categories: {initial.categories.length ? initial.categories.join(', ') : 'All'}</p>
-            <p>{initial.unread_only ? 'Unread only' : 'Read and unread'} · {initial.include_inactive ? 'Include inactive' : 'Active only'}</p>
+            <p>{initial.unread_only ? 'Unread only' : 'Read and unread'} · {initial.statuses.join(', ').toLowerCase()}</p>
             <p>Sort: {initial.sort_key.replaceAll('_', ' ')} ({initial.sort_dir === 'asc' ? 'ascending' : 'descending'})</p>
           </div>
           <DialogFooter>

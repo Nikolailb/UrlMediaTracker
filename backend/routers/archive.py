@@ -10,17 +10,18 @@ from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from models.item import TrackedItem
+from models.item import ItemStatus, TrackedItem
 from models.filter_preset import FilterPreset
 from routers.filter_presets import PresetInput, BUILTIN_NAMES, _apply
 from services.auth import DbDep, IdentityDep, verify_password
 from services.covers import cover_path, save_cover
+from services.item_status import caught_up
 
 router = APIRouter(prefix="/archive", tags=["archive"])
 MAX_ARCHIVE = 100_000_000
 FIELDS = ("title", "original_url", "url_template", "chapter_regex", "pattern_source",
           "check_strategy", "toc_url", "category", "current_chapter", "latest_chapter",
-          "check_interval_min", "is_active", "note", "is_sensitive", "series_url",
+          "check_interval_min", "is_active", "status", "note", "is_sensitive", "series_url",
           "strategy_override", "latest_chapter_url", "first_chapter_url",
           "preferred_group", "toc_examples_json", "toc_row_class", "toc_latest_page_url")
 
@@ -44,7 +45,7 @@ def export_archive(payload: ExportRequest, identity: IdentityDep, db: DbDep):
     data = []
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("manifest.json", json.dumps({"format": "urlmediatracker-account", "version": 1, "includes_sensitive": True}))
+        archive.writestr("manifest.json", json.dumps({"format": "urlmediatracker-account", "version": 2, "includes_sensitive": True}))
         for row in rows:
             entry = {key: getattr(row, key) for key in FIELDS}
             entry["pattern_source"] = row.pattern_source.value if hasattr(row.pattern_source, "value") else row.pattern_source
@@ -59,6 +60,7 @@ def export_archive(payload: ExportRequest, identity: IdentityDep, db: DbDep):
         archive.writestr("presets.json", json.dumps([
             {"name": row.name, "categories": json.loads(row.categories_json),
              "unread_only": row.unread_only, "include_inactive": row.include_inactive,
+             "statuses": json.loads(row.statuses_json),
              "sort_key": row.sort_key, "sort_dir": row.sort_dir}
             for row in presets
         ], ensure_ascii=False))
@@ -80,7 +82,8 @@ async def import_archive(identity: IdentityDep, db: DbDep, file: UploadFile = Fi
             if sum(entry.file_size for entry in archive.infolist()) > MAX_ARCHIVE:
                 raise ValueError("Archive expands beyond size limit.")
             manifest = json.loads(archive.read("manifest.json"))
-            if manifest != {"format": "urlmediatracker-account", "version": 1, "includes_sensitive": True}:
+            if (not isinstance(manifest, dict) or manifest.get("format") != "urlmediatracker-account" or
+                manifest.get("version") not in {1, 2} or manifest.get("includes_sensitive") is not True):
                 raise ValueError("Unsupported archive version.")
             records = json.loads(archive.read("items.json"))
             if not isinstance(records, list) or len(records) > 1000:
@@ -128,6 +131,9 @@ async def import_archive(identity: IdentityDep, db: DbDep, file: UploadFile = Fi
                     raise ValueError("Invalid ToC row class.")
                 if record.get("strategy_override") not in {None, "FREEWEBNOVEL", "COMIX", "TOC_SCRAPER", "INCREMENTAL_PROBE", "TOC_THEN_PROBE"}:
                     raise ValueError("Invalid checker override.")
+                item_status = ItemStatus(record.get("status") or ("ONGOING" if record.get("is_active", True) else "PAUSED"))
+                if item_status == ItemStatus.FINISHED and not caught_up(record.get("current_chapter"), record.get("latest_chapter")):
+                    raise ValueError("Finished item is not caught up.")
                 if url in existing:
                     continue
                 cover = record.get("cover")
@@ -157,6 +163,8 @@ async def import_archive(identity: IdentityDep, db: DbDep, file: UploadFile = Fi
             values["check_strategy"] = values.get("check_strategy") or "INCREMENTAL_PROBE"
             values["check_interval_min"] = int(values.get("check_interval_min") or 360)
             values["is_active"] = bool(values.get("is_active", True))
+            values["status"] = ItemStatus(values.get("status") or ("ONGOING" if values["is_active"] else "PAUSED")).value
+            values["is_active"] = values["status"] == ItemStatus.ONGOING.value
             values["is_sensitive"] = bool(values.get("is_sensitive", False))
             if image:
                 values["cover_filename"] = save_cover(image)

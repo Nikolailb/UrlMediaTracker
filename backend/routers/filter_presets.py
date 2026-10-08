@@ -7,16 +7,18 @@ from typing import Literal
 from sqlalchemy.exc import IntegrityError
 
 from models.filter_preset import FilterPreset
-from models.item import ItemCategory
+from models.item import ItemCategory, ItemStatus
 from services.auth import DbDep, IdentityDep, MutationDep
 
 router = APIRouter(prefix="/filter-presets", tags=["filter-presets"])
 
 VISUAL = ["Manhwa", "Manhua", "Manga", "Webtoon", "Pornhwa", "Comic", "Anime"]
+QUEUE_STATUSES = ["ONGOING", "COMPLETED"]
+ALL_STATUSES = [status.value for status in ItemStatus]
 BUILTINS = [
-    {"id": "images", "name": "Images", "categories": VISUAL, "unread_only": False, "include_inactive": True, "sort_key": "latest_chapter_at", "sort_dir": "desc", "builtin": True},
-    {"id": "words", "name": "Words", "categories": ["Novel", "Light Novel"], "unread_only": False, "include_inactive": True, "sort_key": "latest_chapter_at", "sort_dir": "desc", "builtin": True},
-    {"id": "unread", "name": "Unread", "categories": [], "unread_only": True, "include_inactive": True, "sort_key": "latest_chapter_at", "sort_dir": "desc", "builtin": True},
+    {"id": "images", "name": "Images", "categories": VISUAL, "unread_only": False, "statuses": QUEUE_STATUSES, "include_inactive": False, "sort_key": "latest_chapter_at", "sort_dir": "desc", "builtin": True},
+    {"id": "words", "name": "Words", "categories": ["Novel", "Light Novel"], "unread_only": False, "statuses": QUEUE_STATUSES, "include_inactive": False, "sort_key": "latest_chapter_at", "sort_dir": "desc", "builtin": True},
+    {"id": "unread", "name": "Unread", "categories": [], "unread_only": True, "statuses": QUEUE_STATUSES, "include_inactive": False, "sort_key": "latest_chapter_at", "sort_dir": "desc", "builtin": True},
 ]
 BUILTIN_NAMES = {preset["name"].casefold() for preset in BUILTINS}
 
@@ -25,8 +27,9 @@ class PresetInput(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     categories: list[ItemCategory] = Field(default_factory=list, max_length=len(ItemCategory))
     unread_only: bool = False
-    include_inactive: bool = True
-    sort_key: Literal["title", "created_at", "latest_chapter_at", "last_checked_at", "has_unread"] = "latest_chapter_at"
+    include_inactive: bool = False
+    statuses: list[ItemStatus] | None = None
+    sort_key: Literal["title", "created_at", "latest_chapter_at", "last_checked_at", "has_unread", "status"] = "latest_chapter_at"
     sort_dir: Literal["asc", "desc"] = "desc"
 
     @field_validator("name")
@@ -44,6 +47,19 @@ class PresetInput(BaseModel):
             raise ValueError("A category can appear only once.")
         return value
 
+    @field_validator("statuses")
+    @classmethod
+    def valid_statuses(cls, value: list[ItemStatus] | None) -> list[ItemStatus] | None:
+        if value is not None and (not value or len(set(value)) != len(value)):
+            raise ValueError("Select at least one distinct status.")
+        return value
+
+
+def _statuses(data: PresetInput) -> list[str]:
+    if data.statuses is not None:
+        return [status.value for status in data.statuses]
+    return ALL_STATUSES if data.include_inactive else QUEUE_STATUSES
+
 
 def _read(row: FilterPreset) -> dict:
     return {
@@ -52,6 +68,7 @@ def _read(row: FilterPreset) -> dict:
         "categories": json.loads(row.categories_json),
         "unread_only": row.unread_only,
         "include_inactive": row.include_inactive,
+        "statuses": json.loads(row.statuses_json),
         "sort_key": row.sort_key,
         "sort_dir": row.sort_dir,
         "builtin": False,
@@ -72,7 +89,9 @@ def _apply(row: FilterPreset, data: PresetInput) -> None:
     row.name_key = data.name.casefold()
     row.categories_json = json.dumps([category.value for category in data.categories])
     row.unread_only = data.unread_only
-    row.include_inactive = data.include_inactive
+    statuses = _statuses(data)
+    row.statuses_json = json.dumps(statuses)
+    row.include_inactive = set(statuses) == set(ALL_STATUSES)
     row.sort_key = data.sort_key
     row.sort_dir = data.sort_dir
 

@@ -4,7 +4,7 @@ from pydantic import AliasChoices, BaseModel, Field, field_validator
 from typing import Literal
 from urllib.parse import urlsplit
 
-from models.item import PatternSource, CheckStrategy, ItemCategory
+from models.item import PatternSource, CheckStrategy, ItemCategory, ItemStatus
 
 
 class ItemCreate(BaseModel):
@@ -56,6 +56,7 @@ class ItemUpdate(BaseModel):
     check_interval_min: int | None = None
     current_chapter: str | None = None
     is_active: bool | None = None
+    status: ItemStatus | None = None
     toc_url: str | None = None
     check_strategy: CheckStrategy | None = None
     category: ItemCategory | None = None
@@ -111,6 +112,7 @@ class ItemRead(BaseModel):
     consecutive_failures: int
     last_error: str | None
     is_active: bool
+    status: ItemStatus
     created_at: datetime
     updated_at: datetime
     user_id: str | None

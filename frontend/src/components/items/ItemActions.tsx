@@ -8,7 +8,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { useCheckItem, useMarkRead, useMarkCaughtUp } from '@/hooks/useItems'
+import { useCheckItem, useMarkRead, useMarkCaughtUp, useUpdateItem } from '@/hooks/useItems'
+import { caughtUp } from '@/lib/item-status'
 import { itemsApi } from '@/api/items'
 import { toast } from 'sonner'
 import type { ItemRead } from '@/types/api'
@@ -24,6 +25,14 @@ export function ItemActions({ item, onEdit, onDelete, onHistory }: ItemActionsPr
   const checkItem = useCheckItem()
   const markRead = useMarkRead()
   const markCaughtUp = useMarkCaughtUp()
+  const updateItem = useUpdateItem()
+
+  function changeStatus(status: ItemRead['status']) {
+    updateItem.mutate({ id: item.id, data: { status } }, {
+      onSuccess: () => toast.success(`Status changed to ${status.toLowerCase()}.`),
+      onError: (error) => toast.error(error instanceof Error ? error.message : 'Could not change status.'),
+    })
+  }
 
   async function handleOpenNext() {
     try {
@@ -91,7 +100,7 @@ export function ItemActions({ item, onEdit, onDelete, onHistory }: ItemActionsPr
         size="icon"
         className="h-8 w-8 hidden sm:inline-flex"
         onClick={handleCheck}
-        disabled={checkItem.isPending}
+        disabled={checkItem.isPending || item.status === 'PAUSED'}
         title="Check for updates"
       >
         <RefreshCw className={`h-4 w-4 ${checkItem.isPending ? 'animate-spin' : ''}`} />
@@ -147,7 +156,7 @@ export function ItemActions({ item, onEdit, onDelete, onHistory }: ItemActionsPr
           Mark as caught up
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handleCheck} disabled={checkItem.isPending}>
+        <DropdownMenuItem onClick={handleCheck} disabled={checkItem.isPending || item.status === 'PAUSED'}>
           <RefreshCw className={`mr-2 h-4 w-4 ${checkItem.isPending ? 'animate-spin' : ''}`} />
           Check for updates
         </DropdownMenuItem>
@@ -155,6 +164,13 @@ export function ItemActions({ item, onEdit, onDelete, onHistory }: ItemActionsPr
           <History className="mr-2 h-4 w-4" />
           Check history
         </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {item.status === 'ONGOING' && <DropdownMenuItem onClick={() => changeStatus('COMPLETED')}>Mark publishing completed</DropdownMenuItem>}
+        {item.status === 'PAUSED' && <DropdownMenuItem onClick={() => changeStatus('COMPLETED')}>Mark publishing completed</DropdownMenuItem>}
+        {item.status === 'COMPLETED' && <DropdownMenuItem onClick={() => changeStatus('FINISHED')} disabled={!caughtUp(item.current_chapter, item.latest_chapter)}>Mark finished</DropdownMenuItem>}
+        {item.status === 'FINISHED' && <DropdownMenuItem onClick={() => changeStatus('COMPLETED')}>Reopen reading</DropdownMenuItem>}
+        {item.status === 'PAUSED' && <DropdownMenuItem onClick={() => changeStatus('ONGOING')}>Resume checking</DropdownMenuItem>}
+        {item.status === 'COMPLETED' && <DropdownMenuItem onClick={() => changeStatus('ONGOING')}>Resume publishing checks</DropdownMenuItem>}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onEdit}>
           <Pencil className="mr-2 h-4 w-4" />

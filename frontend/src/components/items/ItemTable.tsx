@@ -6,8 +6,9 @@ import { ItemActions } from './ItemActions'
 import { RelativeTime } from '@/components/ui/relative-time'
 import type { ItemRead } from '@/types/api'
 import { ReadingActions } from './ReadingActions'
+import { statusLabel } from '@/lib/item-status'
 
-type SortKey = 'title' | 'created_at' | 'latest_chapter_at' | 'last_checked_at' | 'has_unread'
+type SortKey = 'title' | 'created_at' | 'latest_chapter_at' | 'last_checked_at' | 'has_unread' | 'status'
 type SortDir = 'asc' | 'desc'
 
 interface ItemTableProps {
@@ -73,7 +74,7 @@ export function ItemTable({ items, sortKey, sortDir, onSort, onEdit, onDelete, o
             <th className="px-4 py-3 text-left hidden lg:table-cell">
               <SortButton col="last_checked_at" label="Last checked" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
             </th>
-            <th className="px-4 py-3 text-left hidden sm:table-cell">Status</th>
+            <th className="px-4 py-3 text-left hidden sm:table-cell"><SortButton col="status" label="Status" sortKey={sortKey} sortDir={sortDir} onSort={onSort} /></th>
             <th className="px-4 py-3 w-12" />
           </tr>
         </thead>
@@ -129,8 +130,8 @@ export function ItemTable({ items, sortKey, sortDir, onSort, onEdit, onDelete, o
 
               {/* Status */}
               <td className="px-4 py-3 hidden sm:table-cell">
-                <Badge variant={item.is_active ? 'success' : 'secondary'}>
-                  {item.is_active ? 'Active' : 'Paused'}
+                <Badge variant={item.status === 'ONGOING' ? 'success' : 'secondary'}>
+                  {statusLabel[item.status]}
                 </Badge>
               </td>
 

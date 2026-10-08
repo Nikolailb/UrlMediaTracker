@@ -101,3 +101,7 @@ Suggest the existing `Novel` category for new FreeWebNovel, WebNovel, Royal Road
 ## D-030 — One mark across tracker and hub (2026-10-08)
 
 Use a generated open-book and blue bookmark mark as the common tracker identity. Derive the favicon and manifest PNGs from the transparent source so they remain visually consistent. Keep a separate subdued dark card background for optional KeiHub upload. Store these as static files and leave hub assignment to the owner; the tracker does not need access to KeiHub's database or upload API. REQ-021.
+
+## D-031 — Separate publishing and reading completion (2026-10-08)
+
+Store one lifecycle status with Ongoing, Paused, Completed, and Finished. Completed represents a manual publishing decision and keeps unread work in the queue; Finished represents an explicit reading decision after catching up. Keep chapter progress and latest known chapter in their own fields. Only Ongoing gets scheduled or Check All polling. Manual checks remain possible for Completed and Finished; a newly discovered chapter reopens Finished as Completed. Saved filters select statuses directly, while the old include-inactive flag remains a compatibility field. We rejected automatic completion from scraper metadata because source signals vary, and automatic finishing at the latest chapter because catching up does not mean the owner is done. REQ-022.

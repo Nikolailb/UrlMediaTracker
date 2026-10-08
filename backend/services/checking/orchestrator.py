@@ -5,7 +5,8 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from sqlalchemy.orm import Session
 from models.check_log import ChapterCheckLog
-from models.item import TrackedItem
+from models.item import ItemStatus, TrackedItem
+from services.item_status import reconcile_finished
 from services.checking.strategies.probe import CheckerConfig, IncrementalProbeStrategy, ProbeBlocked, ProbeFailed
 logger = logging.getLogger(__name__)
 _semaphore: asyncio.Semaphore | None = None
@@ -56,8 +57,8 @@ async def check_item(
         success=False,
     )
 
-    if not item.is_active:
-        log.error_message = "Item is inactive."
+    if item.status == ItemStatus.PAUSED.value:
+        log.error_message = "Item is paused."
         log.outcome = "UNSUPPORTED"
         db.add(log)
         db.commit()
@@ -88,10 +89,13 @@ async def check_item(
                     item.last_outcome = log.outcome = "PENDING"
                     log.pending_chapter = result.chapter
                 else:
+                    if item.status == ItemStatus.FINISHED.value:
+                        item.status = ItemStatus.COMPLETED.value
                     log.new_latest_chapter = result.chapter
                     item.latest_chapter = result.chapter
                     item.latest_chapter_url = result.chapter_url
                     item.latest_chapter_at = datetime.now(timezone.utc)
+                    reconcile_finished(item)
             elif result.outcome == "UNCHANGED" and result.chapter == item.latest_chapter and result.chapter_url:
                 item.latest_chapter_url = result.chapter_url
             if result.first_url:

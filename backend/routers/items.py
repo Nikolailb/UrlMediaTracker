@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models.check_log import ChapterCheckLog
-from models.item import CheckStrategy, ItemCategory, TrackedItem
+from models.item import CheckStrategy, ItemCategory, ItemStatus, TrackedItem
 from schemas.item import ItemCreate, ItemRead, ItemUpdate, MarkReadRequest, NextChapterResponse
 from services.auth import Identity, IdentityDep, owner_id
 from services.checking.orchestrator import MANUAL_CHECK_COOLDOWN_SECONDS, _last_manual_check, check_item
@@ -25,6 +25,7 @@ from services.checking.sites.scribblehub import series_url as scribblehub_series
 from services.checking.sites.comix import series_url as comix_series_url
 from services.checking.strategies.toc import row_class_from_html, parse_toc_examples
 from services.covers import cover_path, save_cover, fetch_cover, MAX_UPLOAD
+from services.item_status import caught_up, reconcile_finished, set_status
 
 router = APIRouter(prefix="/items", tags=["items"])
 DbDep = Annotated[Session, Depends(get_db)]
@@ -125,7 +126,7 @@ async def create_item(payload: ItemCreate, db: DbDep, identity: IdentityDep):
 def list_items(db: DbDep, identity: IdentityDep, user_id: str | None = None, active_only: bool = False):
     query = _visible_query(db, identity, user_id)
     if active_only:
-        query = query.filter(TrackedItem.is_active.is_(True))
+        query = query.filter(TrackedItem.status == ItemStatus.ONGOING.value)
     return [_to_read(item) for item in query.order_by(TrackedItem.created_at.desc()).all()]
 
 
@@ -135,7 +136,7 @@ def export_items(db: DbDep, identity: IdentityDep):
     return [{key: getattr(item, key) for key in (
         "title", "original_url", "url_template", "chapter_regex", "pattern_source",
         "check_strategy", "toc_url", "category", "current_chapter", "latest_chapter",
-        "check_interval_min", "is_active", "note", "is_sensitive", "latest_chapter_url",
+        "check_interval_min", "is_active", "status", "note", "is_sensitive", "latest_chapter_url",
         "first_chapter_url", "preferred_group", "toc_examples_json", "toc_row_class")}
         for item in _visible_query(db, identity).order_by(TrackedItem.created_at).all()]
 
@@ -154,6 +155,8 @@ def update_item(item_id: str, payload: ItemUpdate, db: DbDep, identity: Identity
         item.toc_examples_json, item.toc_row_class,
     )
     data = payload.model_dump(exclude_unset=True)
+    requested_status = data.pop("status", None)
+    legacy_active = data.pop("is_active", None)
     manual_regex = data.pop("manual_regex", None)
     chapter_example = data.pop("chapter_url", None)
     example_urls = data.pop("toc_example_urls", None)
@@ -199,6 +202,16 @@ def update_item(item_id: str, payload: ItemUpdate, db: DbDep, identity: Identity
         item.latest_chapter_url = None
     for key, value in data.items():
         setattr(item, key, value)
+    if requested_status is not None:
+        if requested_status == ItemStatus.FINISHED and (
+            item.status not in {ItemStatus.COMPLETED.value, ItemStatus.FINISHED.value} or
+            (item.status != ItemStatus.FINISHED.value and not caught_up(item.current_chapter, item.latest_chapter))
+        ):
+            raise HTTPException(status.HTTP_409_CONFLICT, "Finish requires a Completed item caught up to a known latest chapter.")
+        set_status(item, requested_status)
+    elif legacy_active is not None:
+        set_status(item, ItemStatus.ONGOING if legacy_active else ItemStatus.PAUSED)
+    reconcile_finished(item)
     after_detection = (
         item.url_template, item.chapter_regex, item.pattern_source, item.toc_url,
         item.strategy_override, item.check_strategy, item.preferred_group,
@@ -341,6 +354,7 @@ def get_next_chapter(item_id: str, db: DbDep, identity: IdentityDep):
 def mark_read(item_id: str, payload: MarkReadRequest, db: DbDep, identity: IdentityDep):
     item = _get_or_404(item_id, db, identity)
     item.current_chapter = payload.chapter
+    reconcile_finished(item)
     item.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(item)
@@ -364,7 +378,7 @@ async def trigger_check(item_id: str, db: DbDep, identity: IdentityDep):
 
 @router.post("/check-all")
 async def trigger_check_all(db: DbDep, identity: IdentityDep):
-    items = _visible_query(db, identity).filter(TrackedItem.is_active.is_(True)).all()
+    items = _visible_query(db, identity).filter(TrackedItem.status == ItemStatus.ONGOING.value).all()
     results = []
     for item in items:
         log = await check_item(item, db, bypass_rate_limit=True)
@@ -394,6 +408,7 @@ def resolve_pending(item_id: str, chapter: Annotated[str, Body(embed=True)], db:
         raise HTTPException(status.HTTP_409_CONFLICT, "No pending result.")
     item.dismissed_candidate = item.pending_latest_chapter if chapter != item.pending_latest_chapter else None
     item.latest_chapter = chapter
+    reconcile_finished(item)
     item.latest_chapter_url = item.pending_chapter_url if chapter == item.pending_latest_chapter else None
     item.pending_latest_chapter = None
     item.pending_chapter_url = None
@@ -422,19 +437,21 @@ def bulk_delete(ids: Annotated[list[str], Body()], db: DbDep, identity: Identity
 @router.post("/bulk-pause")
 def bulk_pause(ids: Annotated[list[str], Body()], db: DbDep, identity: IdentityDep):
     items = _bulk_items(ids, db, identity)
-    for item in items:
-        item.is_active = False
+    changed = [item for item in items if item.status == ItemStatus.ONGOING.value]
+    for item in changed:
+        set_status(item, ItemStatus.PAUSED)
     db.commit()
-    return {"paused": len(items)}
+    return {"paused": len(changed)}
 
 
 @router.post("/bulk-resume")
 def bulk_resume(ids: Annotated[list[str], Body()], db: DbDep, identity: IdentityDep):
     items = _bulk_items(ids, db, identity)
-    for item in items:
-        item.is_active = True
+    changed = [item for item in items if item.status == ItemStatus.PAUSED.value]
+    for item in changed:
+        set_status(item, ItemStatus.ONGOING)
     db.commit()
-    return {"resumed": len(items)}
+    return {"resumed": len(changed)}
 
 
 @router.post("/import", status_code=201)
@@ -452,6 +469,9 @@ def import_items(records: Annotated[list[dict], Body()], db: DbDep, identity: Id
             continue
         try:
             ItemCreate(url=url, toc_url=rec.get("toc_url"))
+            imported_status = ItemStatus(rec.get("status") or ("ONGOING" if rec.get("is_active", True) else "PAUSED"))
+            if imported_status == ItemStatus.FINISHED and not caught_up(rec.get("current_chapter"), rec.get("latest_chapter")):
+                raise ValueError("Finished item is not caught up.")
             if rec.get("url_template"):
                 ItemCreate.web_url(str(rec["url_template"]).replace("{n}", "1"))
             if rec.get("check_strategy", "INCREMENTAL_PROBE") not in {s.value for s in CheckStrategy}:
@@ -471,7 +491,7 @@ def import_items(records: Annotated[list[dict], Body()], db: DbDep, identity: Id
                            current_chapter=rec.get("current_chapter"),
                            latest_chapter=rec.get("latest_chapter"),
                            check_interval_min=int(rec.get("check_interval_min") or 360),
-                           is_active=bool(rec.get("is_active", True)),
+                           status=imported_status.value, is_active=imported_status == ItemStatus.ONGOING,
                            is_sensitive=bool(rec.get("is_sensitive", False)), note=rec.get("note"))
         pending.append(item)
         existing.add(url)
