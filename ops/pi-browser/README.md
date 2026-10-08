@@ -46,6 +46,12 @@ reachable series metadata. A preferred group's link needs rendered chapter
 rows. A bounded Pi browser request returned HTTP 200 with 20 chapter rows and
 20 group links; afterward about 3 GiB RAM was available and swap remained
 unused. The REQ-016 image and Comix browser option were deployed on 2026-10-06.
+On 2026-10-08 the live tracker Compose allowlist was inspected and contained
+`freewebnovel.com,comix.to,www.webnovel.com,www.royalroad.com,www.scribblehub.com`.
+The two-host enable script below expects its exact old starting value; inspect
+the live file before reinstalling host configuration. The gateway remains
+loopback-only with public-only egress. A live Comix preview was verified after
+the 2026-10-08 tracker release; the other Pi source checks were not repeated.
 For a new Pi, after the REQ-016 image passes CI and deploys, run a fresh verified
 backup, copy `allow-comix-pi.sh` to the Pi, and run it as root. It changes only
 the exact existing allowlist to `freewebnovel.com,comix.to`, saves the previous

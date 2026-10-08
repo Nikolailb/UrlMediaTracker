@@ -109,3 +109,7 @@ Store one lifecycle status with Ongoing, Paused, Completed, and Finished. Comple
 ## D-032 — Comix extraction in Add preview (2026-10-08)
 
 The Add review step invokes the guarded Comix checker after a direct Cloudflare challenge when the Comix host is explicitly browser-allowlisted. A separate direct-only access test can still report a challenge; the preview reports browser reachability only after valid Comix series metadata is extracted. This aligns Add with Test selected checker without enabling browser fetching for URL probing or general diagnostics. REQ-004, REQ-006, REQ-015, REQ-016.
+
+## D-033 — Reviewed Pi release and browser hosts (2026-10-08)
+
+Publish commit `1a63471` through KeiHub's exact-commit CI gate after the user reviewed the local status and Comix changes. The live Compose environment was inspected and already allowlisted FreeWebNovel, Comix, WebNovel, Royal Road, and Scribble Hub. Keep its loopback-only API, internal browser network, public-only proxy, and serialized checks. An encrypted USB backup and isolated eight-item database-and-covers migration/rollback rehearsal preceded the live additive migration. The Pi passed post-release integrity and HTTPS checks, and its Comix preview returned chapter 121 through the browser. Other newly released adapters were covered by fixtures and prior local live checks; their Pi source checks were not repeated in this release. REQ-015–REQ-022.
