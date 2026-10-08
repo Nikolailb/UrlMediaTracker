@@ -43,10 +43,12 @@ The Compose file binds its API to `127.0.0.1:8191` only. FlareSolverr has no dir
 
 ```powershell
 $env:FLARESOLVERR_URL = 'http://127.0.0.1:8191'
-$env:FLARESOLVERR_ALLOWED_HOSTS = 'freewebnovel.com'
+$env:FLARESOLVERR_ALLOWED_HOSTS = 'freewebnovel.com,comix.to'
 ```
 
 When running the dev preview, use **Add** with a FreeWebNovel series URL. The preview should show `REACHABLE VIA BROWSER`, method `FREEWEBNOVEL`, and a detected latest chapter. An existing item can use **Check for updates**; a large increase is held as **Review** until accepted. **Test site** intentionally makes a direct request and may still report a Cloudflare HTTP 403. Docker Desktop must remain running for local browser checks. Stop this local option with `docker compose -f compose.flaresolverr.dev.yml down`. The Pi runs a separate pinned browser stack.
+
+The Comix allowlist entry lets Add preview read series metadata after a direct challenge. The supplied `https://comix.to/title/vvnqy-trapped-in-a-hentai-game-academy` example yielded title, cover, and chapter 121 in the local review window; the review button copies those values into editable fields. The separate Test site diagnostic can still report a challenge.
 
 For local WebNovel review, add `www.webnovel.com` to the dev backend's comma-separated allowlist, then restart that backend. The add preview and **Test selected checker** can read a WebNovel book URL such as `https://www.webnovel.com/book/35844914500239705`. **Test site** still reports the direct Cloudflare challenge. Large catalogs above 5 MB are reported as check issues; chapter content may still require WebNovel login or payment. This local allowlist does not change the Pi.
 

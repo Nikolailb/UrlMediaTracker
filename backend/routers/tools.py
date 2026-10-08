@@ -180,7 +180,9 @@ async def preview(payload: UrlInput):
                               "final_url": series_url}
         except Exception:
             pass
-    if comix and access["state"] == "REACHABLE":
+    if comix and (access["state"] == "REACHABLE" or
+                  access["state"] in {"LIKELY_CLOUDFLARE", "INCONCLUSIVE", "TIMEOUT"} and
+                  browser_enabled_for(comix)):
         try:
             status, _, body, headers = await _checker_get(comix, purpose="SITE_SCRAPER")
             if 200 <= status < 300 and len(body) < 512_001 and not _challenge(status, body, headers):
@@ -188,6 +190,9 @@ async def preview(payload: UrlInput):
                 if comix_result.state == "OK":
                     found = {"title": comix_result.title, "chapter": comix_result.latest.chapter,
                              "cover_url": comix_result.cover_url}
+                    if access["state"] != "REACHABLE":
+                        access = {"state": "REACHABLE_VIA_BROWSER", "status_code": status,
+                                  "final_url": comix}
         except Exception:
             pass
     if webnovel and (access["state"] == "REACHABLE" or

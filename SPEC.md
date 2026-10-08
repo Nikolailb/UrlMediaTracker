@@ -28,6 +28,8 @@ Acceptance: both URL forms create entries; a ToC-first entry with a chapter-55 e
 
 The default check interval for newly created items is 360 minutes; existing saved intervals are preserved. The chapter URL example is optional for ToC and site-specific checkers. A manual chapter URL regex guides generic ToC link extraction even when it cannot produce a safe sequential URL template. If an example cannot produce such a template, saving must say so without implying the regex is unusable for ToC scanning.
 
+For a recognized Comix URL, Add preview must try the same guarded site checker used by Test selected checker when the direct access diagnostic reports a likely challenge, timeout, or inconclusive result and browser access is explicitly enabled for Comix. A successful series extraction supplies title, latest chapter, and cover to the review step and reports browser reachability. The separate site diagnostic remains direct-only. A failed or disabled browser path leaves manual tracking available.
+
 ### REQ-005 — Checker selection and outcomes
 Prefer a matching site-specific checker, then a compatible generic ToC or URL checker. Permit item-level override during addition and editing, and display the method. Return distinct new, unchanged, unsupported, blocked, and failed outcomes. Unchanged or blocked never triggers a generic probe.
 

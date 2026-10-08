@@ -105,3 +105,7 @@ Use a generated open-book and blue bookmark mark as the common tracker identity.
 ## D-031 — Separate publishing and reading completion (2026-10-08)
 
 Store one lifecycle status with Ongoing, Paused, Completed, and Finished. Completed represents a manual publishing decision and keeps unread work in the queue; Finished represents an explicit reading decision after catching up. Keep chapter progress and latest known chapter in their own fields. Only Ongoing gets scheduled or Check All polling. Manual checks remain possible for Completed and Finished; a newly discovered chapter reopens Finished as Completed. Saved filters select statuses directly, while the old include-inactive flag remains a compatibility field. We rejected automatic completion from scraper metadata because source signals vary, and automatic finishing at the latest chapter because catching up does not mean the owner is done. REQ-022.
+
+## D-032 — Comix extraction in Add preview (2026-10-08)
+
+The Add review step invokes the guarded Comix checker after a direct Cloudflare challenge when the Comix host is explicitly browser-allowlisted. A separate direct-only access test can still report a challenge; the preview reports browser reachability only after valid Comix series metadata is extracted. This aligns Add with Test selected checker without enabling browser fetching for URL probing or general diagnostics. REQ-004, REQ-006, REQ-015, REQ-016.

@@ -15,6 +15,7 @@ from schemas.item import ItemCreate
 from services.pattern_detection import detect_pattern, unsafe_chapter_template
 
 BASE = "https://comix.to/title/39w1n-the-mating-of-elves"
+CHALLENGED_COMIX = "https://comix.to/title/vvnqy-trapped-in-a-hentai-game-academy"
 WEBTOONS = "https://www.webtoons.com/en/super-hero/unordinary/list?title_no=679"
 SIBLING_TOC = "https://hentai20.io/manga/i-became-a-pornhwa-npc/"
 SIBLING_EXAMPLE = "https://hentai20.io/i-became-a-pornhwa-npc-chapter-75/"
@@ -316,6 +317,28 @@ def test_toc_preview_uses_selected_method_on_comix(monkeypatch):
     assert (dedicated["state"], dedicated["method"]) == ("OK", "COMIX")
     assert (generic_result["state"], generic_result["method"]) == ("EMPTY", "TOC_SCRAPER")
     assert any("Choose Automatic or Comix" in warning for warning in generic_result["warnings"])
+
+
+def test_comix_add_preview_uses_guarded_checker_after_challenge(monkeypatch):
+    # REQ-016: Add preview must obtain the same metadata as Test selected checker.
+    async def challenge(_url):
+        return {"state": "LIKELY_CLOUDFLARE", "status_code": 200, "final_url": CHALLENGED_COMIX}
+
+    async def checked(url, **_kwargs):
+        html = _comix_html(latest=121).replace("39w1n-the-mating-of-elves", "vvnqy-trapped-in-a-hentai-game-academy")
+        html = html.replace("39w1n", "vvnqy")
+        html = html.replace('"title": "The Mating of Elves"', '"title": "Trapped in a Hentai Game Academy"')
+        return 200, url, html.encode(), {}
+
+    monkeypatch.setattr(tools, "diagnose_url", challenge)
+    monkeypatch.setattr(tools, "browser_enabled_for", lambda _url: True)
+    monkeypatch.setattr(tools, "_checker_get", checked)
+    result = asyncio.run(tools.preview(tools.UrlInput(url=CHALLENGED_COMIX)))
+    assert result["access"]["state"] == "REACHABLE_VIA_BROWSER"
+    assert result["checker"] == "COMIX"
+    assert result["title"] == "Trapped in a Hentai Game Academy"
+    assert result["latest_chapter"] == "121"
+    assert result["cover_url"] == "https://static.comix.to/cover.jpg"
 
 
 def test_truncated_toc_is_not_unchanged(monkeypatch):
